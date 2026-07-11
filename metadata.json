@@ -1,0 +1,6 @@
+{
+  "name": "Comfort Steps",
+  "description": "Premium luxury and comfortable women's footwear storefront featuring real-time interactive foot sizing and order tracking synced with Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
