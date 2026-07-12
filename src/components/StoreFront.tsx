@@ -889,6 +889,46 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     }
   };
 
+  const downloadInvoice = (ord: Order) => {
+    const invoiceContent = `
+=========================================
+          COMFORT STEPS FOOTWEAR
+            PURCHASE INVOICE
+=========================================
+Order ID:      ${ord.id}
+Order Date:    ${new Date(ord.createdAt).toLocaleString()}
+Status:        ${ord.status}
+-----------------------------------------
+CUSTOMER DETAILS:
+Name:          ${ord.customerName}
+Email:         ${ord.customerEmail}
+Phone:         ${ord.customerPhone}
+Address:       ${ord.shippingAddress}
+-----------------------------------------
+ITEMS ORDERED:
+${ord.items.map((item, idx) => `
+${idx + 1}. ${item.product.name}
+   Color: ${item.selectedColor} | Size: ${item.selectedSize}
+   Qty:   ${item.quantity} x ₹${item.product.price} = ₹${item.quantity * item.product.price}
+`).join("\n")}
+-----------------------------------------
+PAYMENT DETAILS:
+Payment Method: ${ord.paymentMethod === "COD" ? "Cash on Delivery" : ord.paymentMethod}
+Total Paid:     ₹${ord.totalAmount}
+=========================================
+   Thank you for shopping with Comfort Steps!
+   Experience premium luxury & unmatched comfort.
+=========================================
+`;
+    const element = document.createElement("a");
+    const file = new Blob([invoiceContent], { type: "text/plain" });
+    element.href = URL.createObjectURL(file);
+    element.download = `Invoice_${ord.id}.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
   // Filter Products Dynamically
   const filteredProducts = products.filter(prod => {
     const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -2858,7 +2898,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
               >
                 <ChevronLeft size={18} />
               </button>
-              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">My Orders</h2>
+              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">My Orders{currentUser ? ` (${myOrders.length})` : ""}</h2>
               <div className="w-10 h-10" />
             </div>
 
@@ -3074,21 +3114,31 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                         )}
                       </div>
 
-                      {/* Cancel Button */}
-                      {isCancellable && (
-                        <div className="border-t border-neutral-100 pt-3">
+                      {/* Order Actions */}
+                      <div className="border-t border-neutral-100 pt-3 flex gap-2">
+                        <button
+                          onClick={() => downloadInvoice(ord)}
+                          className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-150 text-neutral-700 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                          </svg>
+                          Download Invoice
+                        </button>
+
+                        {isCancellable && (
                           <button
                             onClick={() => {
                               if (confirm("Are you sure you want to cancel this order? This action cannot be undone.")) {
                                 handleUpdateOrder(ord.id, { status: "Cancelled" });
                               }
                             }}
-                            className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-rose-600 font-extrabold text-xs rounded-xl transition cursor-pointer"
+                            className="flex-1 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 font-extrabold text-xs rounded-xl transition cursor-pointer"
                           >
                             Cancel Order
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -3294,6 +3344,18 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                 <motion.div layoutId="navActiveBg" className="absolute inset-0 bg-black rounded-full" transition={{ type: "spring", stiffness: 350, damping: 28 }} />
               )}
               <Heart size={18} fill={favorites.length > 0 ? (activeTab === "wishlist" && screen === "dashboard" && !selectedProduct ? "#ffffff" : "#ef4444") : "none"} className={`relative z-10 ${favorites.length > 0 && activeTab !== "wishlist" ? "text-rose-500" : ""}`} />
+            </button>
+
+            {/* Orders Button */}
+            <button 
+              onClick={() => { setScreen("my_orders"); setSelectedProduct(null); }}
+              className={`relative p-2.5 transition flex flex-col items-center justify-center cursor-pointer ${screen === "my_orders" && !selectedProduct ? "text-white scale-105" : "hover:text-black"}`}
+              title="My Orders"
+            >
+              {screen === "my_orders" && !selectedProduct && (
+                <motion.div layoutId="navActiveBg" className="absolute inset-0 bg-black rounded-full" transition={{ type: "spring", stiffness: 350, damping: 28 }} />
+              )}
+              <Package size={18} className="relative z-10" />
             </button>
 
             {/* Profile Button */}
