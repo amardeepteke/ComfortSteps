@@ -1,3 +1,26 @@
+export interface SizeStock {
+  size: string;
+  stock: number;
+}
+
+export interface ProductVariant {
+  colourName: string;
+  colourThumbnail?: string;
+  images: string[];
+  sellingPrice: number;
+  mrp: number;
+  description: string;
+  sizes: string[];
+  stockQuantity?: number;
+  sizeStocks?: SizeStock[];
+  status?: string;
+  sku?: string;
+  // Backwards compatibility fields
+  color?: string;
+  price?: number;
+  originalPrice?: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -13,6 +36,7 @@ export interface Product {
   colors: string[];
   isFeatured?: boolean;
   createdAt: string;
+  variants?: ProductVariant[];
 }
 
 export interface CartItem {

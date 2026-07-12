@@ -517,14 +517,94 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
     });
   };
 
+  // Color Name to Hex Mapping
+  const getColorHex = (colorName: string): string => {
+    const mapping: { [key: string]: string } = {
+      nude: "#E8C3A7",
+      brown: "#8B5A2B",
+      black: "#000000",
+      white: "#FFFFFF",
+      pink: "#FFC0CB",
+      red: "#FF0000",
+      blue: "#0000FF",
+      green: "#008000",
+      grey: "#808080",
+      gray: "#808080",
+      beige: "#F5F5DC",
+      tan: "#D2B48C",
+      yellow: "#FFFF00",
+      navy: "#000080",
+      gold: "#FFD700",
+      silver: "#C0C0C0"
+    };
+    const normalized = colorName.trim().toLowerCase();
+    if (normalized.startsWith("#")) return normalized;
+    return mapping[normalized] || colorName;
+  };
+
+  // Helper to safely get the current default/representative price and image for a product
+  const getProductDisplayProps = (prod: Product) => {
+    if (prod.variants && prod.variants.length > 0) {
+      const first = prod.variants[0];
+      const thumbnail = first.colourThumbnail || (first.images && first.images.length > 0 ? first.images[0] : prod.images[0]);
+      const price = first.sellingPrice !== undefined ? first.sellingPrice : (first.price !== undefined ? first.price : prod.price);
+      const originalPrice = first.mrp !== undefined ? first.mrp : (first.originalPrice !== undefined ? first.originalPrice : prod.originalPrice);
+      return {
+        image: thumbnail,
+        price,
+        originalPrice
+      };
+    }
+    return {
+      image: prod.images[0],
+      price: prod.price,
+      originalPrice: prod.originalPrice
+    };
+  };
+
   // View Product Detail
   const handleViewProduct = (product: Product) => {
     setSelectedProduct(product);
     setActiveImageIdx(0);
-    setSelectedSize(product.sizes[0] || "");
-    setSelectedColor(product.colors[0] || "");
+    
+    const initialColor = product.variants && product.variants.length > 0 
+      ? (product.variants[0].colourName || product.variants[0].color || "") 
+      : (product.colors && product.colors[0]) || "";
+    
+    setSelectedColor(initialColor);
+    
+    const initialVariant = product.variants?.find(
+      v => (v.colourName || v.color || "").toLowerCase() === initialColor.toLowerCase()
+    );
+    const initialSizes = initialVariant?.sizes && initialVariant.sizes.length > 0
+      ? initialVariant.sizes
+      : product.sizes;
+      
+    setSelectedSize(initialSizes[0] || "");
     addToRecentViewed(product.id);
     setScreen("detail");
+  };
+
+  const handleColorChange = (color: string) => {
+    setSelectedColor(color);
+    setActiveImageIdx(0);
+    
+    if (selectedProduct) {
+      const newVariant = selectedProduct.variants?.find(
+        v => (v.colourName || v.color || "").toLowerCase() === color.toLowerCase()
+      );
+      const newSizes = newVariant?.sizes && newVariant.sizes.length > 0 
+        ? newVariant.sizes 
+        : selectedProduct.sizes || [];
+        
+      if (newSizes.length > 0) {
+        if (!newSizes.includes(selectedSize)) {
+          setSelectedSize(newSizes[0]);
+        }
+      } else {
+        setSelectedSize("");
+      }
+    }
   };
 
   // Foot length to Size recommender
@@ -558,14 +638,43 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
     if (!selectedProduct) return;
     if (!checkAuthBeforeAction("detail")) return;
 
-    // Trigger flying shoe animation
+    const sizeToUse = selectedSize || selectedProduct.sizes[0] || "Standard";
+    const colorToUse = selectedColor || selectedProduct.colors[0] || "Standard";
+
+    // Find the active variant
+    const activeVariant = selectedProduct.variants?.find(
+      v => (v.colourName || v.color || "").toLowerCase() === colorToUse.toLowerCase()
+    );
+
+    // Dynamic variant values
+    const displayImages = activeVariant?.images && activeVariant.images.length > 0 
+      ? activeVariant.images 
+      : selectedProduct.images;
+    
+    const displayPrice = activeVariant?.sellingPrice !== undefined 
+      ? activeVariant.sellingPrice 
+      : (activeVariant?.price !== undefined ? activeVariant.price : selectedProduct.price);
+
+    const displayOriginalPrice = activeVariant?.mrp !== undefined 
+      ? activeVariant.mrp 
+      : (activeVariant?.originalPrice !== undefined ? activeVariant.originalPrice : selectedProduct.originalPrice);
+
+    const displayDescription = activeVariant?.description 
+      ? activeVariant.description 
+      : selectedProduct.description;
+
+    const displaySizes = activeVariant?.sizes && activeVariant.sizes.length > 0 
+      ? activeVariant.sizes 
+      : selectedProduct.sizes;
+
+    // Trigger flying shoe animation using correct variant image
     if (e) {
       const buttonRect = e.currentTarget.getBoundingClientRect();
       const newItem: FlyingItem = {
         id: nextFlyingId,
         startX: buttonRect.left + buttonRect.width / 2,
         startY: buttonRect.top + buttonRect.height / 2,
-        image: selectedProduct.images[0]
+        image: displayImages[0] || selectedProduct.images[0]
       };
       setFlyingItems(prev => [...prev, newItem]);
       setNextFlyingId(prev => prev + 1);
@@ -577,8 +686,14 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
       }, 900);
     }
 
-    const sizeToUse = selectedSize || selectedProduct.sizes[0] || "Standard";
-    const colorToUse = selectedColor || selectedProduct.colors[0] || "Standard";
+    const modifiedProduct: Product = {
+      ...selectedProduct,
+      price: displayPrice,
+      originalPrice: displayOriginalPrice,
+      description: displayDescription,
+      images: displayImages,
+      sizes: displaySizes,
+    };
 
     const existingIdx = cart.findIndex(
       item => item.product.id === selectedProduct.id && 
@@ -589,12 +704,13 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
     if (existingIdx > -1) {
       const updated = [...cart];
       updated[existingIdx].quantity += 1;
+      updated[existingIdx].product = modifiedProduct;
       setCart(updated);
     } else {
       setCart(prev => [
         ...prev,
         {
-          product: selectedProduct,
+          product: modifiedProduct,
           quantity: 1,
           selectedSize: sizeToUse,
           selectedColor: colorToUse
@@ -1032,53 +1148,56 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        {featuredProducts.slice(0, 2).map((prod) => (
-                          <div
-                            key={prod.id}
-                            onClick={() => handleViewProduct(prod)}
-                            className="bg-white rounded-[24px] p-3 border border-neutral-100 shadow-xs cursor-pointer hover:shadow-md transition-all group flex flex-col justify-between"
-                          >
-                            <div className="relative bg-[#F5F5F4] rounded-[18px] h-[130px] overflow-hidden flex items-center justify-center p-2">
-                              <span className="absolute top-2 left-2 bg-[#E2583E] text-white text-[8px] font-extrabold px-2 py-0.5 rounded-md">
-                                NEW
-                              </span>
-                              
-                              <img 
-                                src={prod.images[0]} 
-                                alt={prod.name}
-                                className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
-                                referrerPolicy="no-referrer"
-                              />
-                              
-                              <button 
-                                onClick={(e) => toggleFavorite(prod.id, e)}
-                                className="absolute top-2 right-2 w-7 h-7 bg-white/95 rounded-full shadow-xs flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
-                              >
-                                <Heart size={13} fill={favorites.includes(prod.id) ? "#ef4444" : "none"} className={favorites.includes(prod.id) ? "text-rose-500" : ""} />
-                              </button>
-                            </div>
-                            
-                            <div className="pt-2 px-1 flex flex-col justify-between flex-1">
-                              <div className="flex justify-between items-start gap-1">
-                                <h4 className="font-bold text-xs text-neutral-800 truncate">{prod.name}</h4>
-                                <div className="flex items-center gap-0.5 shrink-0 text-amber-500">
-                                  <span className="text-[10px]">★</span>
-                                  <span className="text-[10px] font-bold text-neutral-600">{prod.rating}</span>
-                                </div>
+                        {featuredProducts.slice(0, 2).map((prod) => {
+                          const displayProps = getProductDisplayProps(prod);
+                          return (
+                            <div
+                              key={prod.id}
+                              onClick={() => handleViewProduct(prod)}
+                              className="bg-white rounded-[24px] p-3 border border-neutral-100 shadow-xs cursor-pointer hover:shadow-md transition-all group flex flex-col justify-between"
+                            >
+                              <div className="relative bg-[#F5F5F4] rounded-[18px] h-[130px] overflow-hidden flex items-center justify-center p-2">
+                                <span className="absolute top-2 left-2 bg-[#E2583E] text-white text-[8px] font-extrabold px-2 py-0.5 rounded-md">
+                                  NEW
+                                </span>
+                                
+                                <img 
+                                  src={displayProps.image} 
+                                  alt={prod.name}
+                                  className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
+                                  referrerPolicy="no-referrer"
+                                />
+                                
+                                <button 
+                                  onClick={(e) => toggleFavorite(prod.id, e)}
+                                  className="absolute top-2 right-2 w-7 h-7 bg-white/95 rounded-full shadow-xs flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
+                                >
+                                  <Heart size={13} fill={favorites.includes(prod.id) ? "#ef4444" : "none"} className={favorites.includes(prod.id) ? "text-rose-500" : ""} />
+                                </button>
                               </div>
                               
-                              <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-neutral-50">
-                                <div className="flex items-baseline gap-1">
-                                  <span className="text-xs font-black text-neutral-900">₹{prod.price}</span>
-                                  <span className="text-[9px] text-neutral-400 line-through">₹{prod.originalPrice}</span>
+                              <div className="pt-2 px-1 flex flex-col justify-between flex-1">
+                                <div className="flex justify-between items-start gap-1">
+                                  <h4 className="font-bold text-xs text-neutral-800 truncate">{prod.name}</h4>
+                                  <div className="flex items-center gap-0.5 shrink-0 text-amber-500">
+                                    <span className="text-[10px]">★</span>
+                                    <span className="text-[10px] font-bold text-neutral-600">{prod.rating}</span>
+                                  </div>
                                 </div>
-                                <div className="w-6.5 h-6.5 bg-black hover:bg-neutral-800 text-white rounded-full flex items-center justify-center transition">
-                                  <ArrowRight size={11} className="-rotate-45" />
+                                
+                                <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-neutral-50">
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-xs font-black text-neutral-900">₹{displayProps.price}</span>
+                                    <span className="text-[9px] text-neutral-400 line-through">₹{displayProps.originalPrice}</span>
+                                  </div>
+                                  <div className="w-6.5 h-6.5 bg-black hover:bg-neutral-800 text-white rounded-full flex items-center justify-center transition">
+                                    <ArrowRight size={11} className="-rotate-45" />
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1095,48 +1214,51 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        {featuredProducts.slice(2, 4).map((prod) => (
-                          <div
-                            key={prod.id}
-                            onClick={() => handleViewProduct(prod)}
-                            className="bg-white rounded-[24px] p-3 border border-neutral-100 shadow-xs cursor-pointer hover:shadow-md transition-all group flex flex-col justify-between"
-                          >
-                            <div className="relative bg-[#F5F5F4] rounded-[18px] h-[130px] overflow-hidden flex items-center justify-center p-2">
-                              <img 
-                                src={prod.images[0]} 
-                                alt={prod.name}
-                                className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
-                                referrerPolicy="no-referrer"
-                              />
-                              <button 
-                                onClick={(e) => toggleFavorite(prod.id, e)}
-                                className="absolute top-2 right-2 w-7 h-7 bg-white/95 rounded-full shadow-xs flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
-                              >
-                                <Heart size={13} fill={favorites.includes(prod.id) ? "#ef4444" : "none"} className={favorites.includes(prod.id) ? "text-rose-500" : ""} />
-                              </button>
-                            </div>
-                            
-                            <div className="pt-2 px-1 flex flex-col justify-between flex-1">
-                              <div className="flex justify-between items-start gap-1">
-                                <h4 className="font-bold text-xs text-neutral-800 truncate">{prod.name}</h4>
-                                <div className="flex items-center gap-0.5 shrink-0 text-amber-500">
-                                  <span className="text-[10px]">★</span>
-                                  <span className="text-[10px] font-bold text-neutral-600">{prod.rating}</span>
-                                </div>
+                        {featuredProducts.slice(2, 4).map((prod) => {
+                          const displayProps = getProductDisplayProps(prod);
+                          return (
+                            <div
+                              key={prod.id}
+                              onClick={() => handleViewProduct(prod)}
+                              className="bg-white rounded-[24px] p-3 border border-neutral-100 shadow-xs cursor-pointer hover:shadow-md transition-all group flex flex-col justify-between"
+                            >
+                              <div className="relative bg-[#F5F5F4] rounded-[18px] h-[130px] overflow-hidden flex items-center justify-center p-2">
+                                <img 
+                                  src={displayProps.image} 
+                                  alt={prod.name}
+                                  className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <button 
+                                  onClick={(e) => toggleFavorite(prod.id, e)}
+                                  className="absolute top-2 right-2 w-7 h-7 bg-white/95 rounded-full shadow-xs flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
+                                >
+                                  <Heart size={13} fill={favorites.includes(prod.id) ? "#ef4444" : "none"} className={favorites.includes(prod.id) ? "text-rose-500" : ""} />
+                                </button>
                               </div>
                               
-                              <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-neutral-50">
-                                <div className="flex items-baseline gap-1">
-                                  <span className="text-xs font-black text-neutral-900">₹{prod.price}</span>
-                                  <span className="text-[9px] text-neutral-400 line-through">₹{prod.originalPrice}</span>
+                              <div className="pt-2 px-1 flex flex-col justify-between flex-1">
+                                <div className="flex justify-between items-start gap-1">
+                                  <h4 className="font-bold text-xs text-neutral-800 truncate">{prod.name}</h4>
+                                  <div className="flex items-center gap-0.5 shrink-0 text-amber-500">
+                                    <span className="text-[10px]">★</span>
+                                    <span className="text-[10px] font-bold text-neutral-600">{prod.rating}</span>
+                                  </div>
                                 </div>
-                                <div className="w-6.5 h-6.5 bg-black hover:bg-neutral-800 text-white rounded-full flex items-center justify-center transition">
-                                  <ArrowRight size={11} className="-rotate-45" />
+                                
+                                <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-neutral-50">
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-xs font-black text-neutral-900">₹{displayProps.price}</span>
+                                    <span className="text-[9px] text-neutral-400 line-through">₹{displayProps.originalPrice}</span>
+                                  </div>
+                                  <div className="w-6.5 h-6.5 bg-black hover:bg-neutral-800 text-white rounded-full flex items-center justify-center transition">
+                                    <ArrowRight size={11} className="-rotate-45" />
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -1226,48 +1348,51 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-4">
-                        {filteredProducts.map((prod) => (
-                          <div
-                            key={prod.id}
-                            onClick={() => handleViewProduct(prod)}
-                            className="bg-white rounded-[24px] p-3 border border-neutral-100 shadow-xs cursor-pointer hover:shadow-md transition-all group flex flex-col justify-between"
-                          >
-                            <div className="relative bg-[#F5F5F4] rounded-[18px] h-[130px] overflow-hidden flex items-center justify-center p-2">
-                              <img 
-                                src={prod.images[0]} 
-                                alt={prod.name}
-                                className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
-                                referrerPolicy="no-referrer"
-                              />
-                              <button 
-                                onClick={(e) => toggleFavorite(prod.id, e)}
-                                className="absolute top-2 right-2 w-7 h-7 bg-white/95 rounded-full shadow-xs flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
-                              >
-                                <Heart size={13} fill={favorites.includes(prod.id) ? "#ef4444" : "none"} className={favorites.includes(prod.id) ? "text-rose-500" : ""} />
-                              </button>
-                            </div>
-                            
-                            <div className="pt-2 px-1 flex flex-col justify-between flex-1">
-                              <div className="flex justify-between items-start gap-1">
-                                <h4 className="font-bold text-xs text-neutral-800 truncate">{prod.name}</h4>
-                                <div className="flex items-center gap-0.5 shrink-0 text-amber-500">
-                                  <span className="text-[10px]">★</span>
-                                  <span className="text-[10px] font-bold text-neutral-600">{prod.rating}</span>
-                                </div>
+                        {filteredProducts.map((prod) => {
+                          const displayProps = getProductDisplayProps(prod);
+                          return (
+                            <div
+                              key={prod.id}
+                              onClick={() => handleViewProduct(prod)}
+                              className="bg-white rounded-[24px] p-3 border border-neutral-100 shadow-xs cursor-pointer hover:shadow-md transition-all group flex flex-col justify-between"
+                            >
+                              <div className="relative bg-[#F5F5F4] rounded-[18px] h-[130px] overflow-hidden flex items-center justify-center p-2">
+                                <img 
+                                  src={displayProps.image} 
+                                  alt={prod.name}
+                                  className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <button 
+                                  onClick={(e) => toggleFavorite(prod.id, e)}
+                                  className="absolute top-2 right-2 w-7 h-7 bg-white/95 rounded-full shadow-xs flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
+                                >
+                                  <Heart size={13} fill={favorites.includes(prod.id) ? "#ef4444" : "none"} className={favorites.includes(prod.id) ? "text-rose-500" : ""} />
+                                </button>
                               </div>
                               
-                              <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-neutral-50">
-                                <div className="flex items-baseline gap-1">
-                                  <span className="text-xs font-black text-neutral-900">₹{prod.price}</span>
-                                  <span className="text-[9px] text-neutral-400 line-through">₹{prod.originalPrice}</span>
+                              <div className="pt-2 px-1 flex flex-col justify-between flex-1">
+                                <div className="flex justify-between items-start gap-1">
+                                  <h4 className="font-bold text-xs text-neutral-800 truncate">{prod.name}</h4>
+                                  <div className="flex items-center gap-0.5 shrink-0 text-amber-500">
+                                    <span className="text-[10px]">★</span>
+                                    <span className="text-[10px] font-bold text-neutral-600">{prod.rating}</span>
+                                  </div>
                                 </div>
-                                <div className="w-6.5 h-6.5 bg-black hover:bg-neutral-800 text-white rounded-full flex items-center justify-center transition">
-                                  <ArrowRight size={11} className="-rotate-45" />
+                                
+                                <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-neutral-50">
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-xs font-black text-neutral-900">₹{displayProps.price}</span>
+                                    <span className="text-[9px] text-neutral-400 line-through">₹{displayProps.originalPrice}</span>
+                                  </div>
+                                  <div className="w-6.5 h-6.5 bg-black hover:bg-neutral-800 text-white rounded-full flex items-center justify-center transition">
+                                    <ArrowRight size={11} className="-rotate-45" />
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1801,207 +1926,321 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
         )}
 
         {/* VIEW 3: DETAILED FOOTWEAR PRODUCT PAGE */}
-        {screen === "detail" && selectedProduct && (
-          <motion.div
-            key="detail"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 15 }}
-            className="max-w-md mx-auto px-4 py-6"
-          >
-            {/* Nav */}
-            <div className="flex justify-between items-center mb-6">
-              <button 
-                onClick={() => setScreen("dashboard")}
-                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <h2 className="font-display font-bold text-sm text-neutral-900 uppercase tracking-widest">Product Details</h2>
-              <button 
-                onClick={() => setScreen("cart")}
-                className="relative w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
-              >
-                <ShoppingBag size={18} />
-                {cart.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-black text-white text-[9px] font-bold w-4.5 h-4.5 rounded-full flex items-center justify-center">
-                    {cart.reduce((s, i) => s + i.quantity, 0)}
-                  </span>
-                )}
-              </button>
-            </div>
+        {screen === "detail" && selectedProduct && (() => {
+          const activeVariant = selectedProduct.variants?.find(
+            v => (v.colourName || v.color || "").toLowerCase() === selectedColor.toLowerCase()
+          );
 
-            {/* Images stage */}
-            <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-xs mb-5 relative">
-              <div className="h-[220px] flex items-center justify-center rounded-2xl bg-[#F5F5F4] overflow-hidden p-4 relative">
-                <motion.img 
-                  key={activeImageIdx}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.25 }}
-                  src={selectedProduct.images[activeImageIdx]} 
-                  alt={selectedProduct.name}
-                  className="max-h-full max-w-full object-contain mix-blend-multiply"
-                  referrerPolicy="no-referrer"
-                />
-                
+          const displayImages = activeVariant?.images && activeVariant.images.length > 0 
+            ? activeVariant.images 
+            : selectedProduct.images;
+          
+          const displayPrice = activeVariant?.sellingPrice !== undefined 
+            ? activeVariant.sellingPrice 
+            : (activeVariant?.price !== undefined ? activeVariant.price : selectedProduct.price);
+
+          const displayOriginalPrice = activeVariant?.mrp !== undefined 
+            ? activeVariant.mrp 
+            : (activeVariant?.originalPrice !== undefined ? activeVariant.originalPrice : selectedProduct.originalPrice);
+
+          const displayDescription = activeVariant?.description 
+            ? activeVariant.description 
+            : selectedProduct.description;
+
+          const displaySizes = activeVariant?.sizes && activeVariant.sizes.length > 0 
+            ? activeVariant.sizes 
+            : selectedProduct.sizes;
+
+          const discountPercent = displayOriginalPrice > displayPrice 
+            ? Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100) 
+            : 0;
+
+          return (
+            <motion.div
+              key="detail"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 15 }}
+              className="max-w-md mx-auto px-4 py-6"
+            >
+              {/* Nav */}
+              <div className="flex justify-between items-center mb-6">
                 <button 
-                  onClick={() => toggleFavorite(selectedProduct.id)}
-                  className="absolute top-3 right-3 w-9 h-9 bg-white border border-neutral-150 rounded-full shadow-md flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
+                  onClick={() => setScreen("dashboard")}
+                  className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
                 >
-                  <Heart size={16} fill={favorites.includes(selectedProduct.id) ? "#ef4444" : "none"} className={favorites.includes(selectedProduct.id) ? "text-rose-500" : ""} />
+                  <ChevronLeft size={18} />
+                </button>
+                <h2 className="font-display font-bold text-sm text-neutral-900 uppercase tracking-widest">Product Details</h2>
+                <button 
+                  onClick={() => setScreen("cart")}
+                  className="relative w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+                >
+                  <ShoppingBag size={18} />
+                  {cart.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-black text-white text-[9px] font-bold w-4.5 h-4.5 rounded-full flex items-center justify-center">
+                      {cart.reduce((s, i) => s + i.quantity, 0)}
+                    </span>
+                  )}
                 </button>
               </div>
 
-              {/* Thumbnails */}
-              <div className="flex gap-2 justify-center mt-4">
-                {selectedProduct.images.map((img, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setActiveImageIdx(idx)}
-                    className={`w-12 h-12 bg-neutral-50 rounded-lg p-1 border flex items-center justify-center transition-all ${
-                      activeImageIdx === idx 
-                        ? "border-black ring-2 ring-neutral-900/5" 
-                        : "border-neutral-200 hover:border-neutral-300"
-                    }`}
+              {/* Images stage */}
+              <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-xs mb-5 relative">
+                <div className="h-[220px] flex items-center justify-center rounded-2xl bg-[#F5F5F4] overflow-hidden p-4 relative">
+                  <motion.img 
+                    key={`${selectedColor}-${activeImageIdx}`}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.25 }}
+                    src={displayImages[activeImageIdx] || displayImages[0] || selectedProduct.images[0]} 
+                    alt={selectedProduct.name}
+                    className="max-h-full max-w-full object-contain mix-blend-multiply"
+                    referrerPolicy="no-referrer"
+                  />
+                  
+                  <button 
+                    onClick={() => toggleFavorite(selectedProduct.id)}
+                    className="absolute top-3 right-3 w-9 h-9 bg-white border border-neutral-150 rounded-full shadow-md flex items-center justify-center text-neutral-300 hover:text-rose-500 transition"
                   >
-                    <img src={img} alt="" className="max-h-full max-w-full object-contain mix-blend-multiply" referrerPolicy="no-referrer" />
+                    <Heart size={16} fill={favorites.includes(selectedProduct.id) ? "#ef4444" : "none"} className={favorites.includes(selectedProduct.id) ? "text-rose-500" : ""} />
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            {/* Specs Header */}
-            <div className="space-y-1.5 mb-5">
-              <span className="text-[10px] text-neutral-400 font-extrabold uppercase tracking-widest block">{selectedProduct.brand}</span>
-              <div className="flex justify-between items-start gap-3">
-                <h1 className="font-display font-black text-xl text-neutral-900 leading-tight">{selectedProduct.name}</h1>
-                <div className="text-right">
-                  <span className="text-xl font-black text-neutral-900 block">₹{selectedProduct.price}</span>
-                  {selectedProduct.originalPrice > selectedProduct.price && (
-                    <span className="text-[11px] text-neutral-400 line-through">₹{selectedProduct.originalPrice}</span>
-                  )}
+                {/* Thumbnails */}
+                {displayImages.length > 0 && (
+                  <div className="flex gap-2 justify-center mt-4 overflow-x-auto py-1 scrollbar-none">
+                    {displayImages.map((img, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setActiveImageIdx(idx)}
+                        className={`w-12 h-12 bg-neutral-50 rounded-lg p-1 border flex-shrink-0 flex items-center justify-center transition-all ${
+                          activeImageIdx === idx 
+                            ? "border-black ring-2 ring-neutral-900/5" 
+                            : "border-neutral-200 hover:border-neutral-300"
+                        }`}
+                      >
+                        <img src={img} alt="" className="max-h-full max-w-full object-contain mix-blend-multiply" referrerPolicy="no-referrer" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Specs Header */}
+              <div className="space-y-1.5 mb-5">
+                <span className="text-[10px] text-neutral-400 font-extrabold uppercase tracking-widest block">{selectedProduct.brand}</span>
+                <div className="flex justify-between items-start gap-3">
+                  <h1 className="font-display font-black text-xl text-neutral-900 leading-tight">{selectedProduct.name}</h1>
+                  <div className="text-right">
+                    <span className="text-xl font-black text-neutral-900 block">₹{displayPrice}</span>
+                    {displayOriginalPrice > displayPrice && (
+                      <div className="flex items-center gap-1.5 justify-end mt-0.5">
+                        <span className="text-[11px] text-neutral-400 line-through">₹{displayOriginalPrice}</span>
+                        <span className="text-[10px] text-red-600 font-extrabold bg-red-50 px-1 py-0.2 rounded-md shrink-0">
+                          {discountPercent}% OFF
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-1.5">
+                  <span className="text-amber-500 text-sm">★</span>
+                  <span className="text-xs font-bold text-neutral-700">{selectedProduct.rating}</span>
+                  <span className="text-xs text-neutral-400">({selectedProduct.reviewsCount} verified ratings)</span>
                 </div>
               </div>
-              
-              <div className="flex items-center gap-1.5">
-                <span className="text-amber-500 text-sm">★</span>
-                <span className="text-xs font-bold text-neutral-700">{selectedProduct.rating}</span>
-                <span className="text-xs text-neutral-400">({selectedProduct.reviewsCount} verified ratings)</span>
-              </div>
-            </div>
 
-            {/* Colors Swatches */}
-            {selectedProduct.colors && selectedProduct.colors.length > 0 && (
-              <div className="mb-5">
-                <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider block mb-2">Select Color</span>
-                <div className="flex gap-2">
-                  {selectedProduct.colors.map((color) => (
+              {/* Colors Swatches */}
+              {selectedProduct.variants && selectedProduct.variants.length > 0 ? (
+                <div className="mb-5">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider block">
+                      Color: <span className="text-neutral-800 font-black">{selectedColor}</span>
+                    </span>
+                    {(() => {
+                      const variantStock = activeVariant?.stockQuantity !== undefined 
+                        ? activeVariant.stockQuantity 
+                        : (activeVariant?.stock !== undefined ? activeVariant.stock : undefined);
+                      
+                      if (variantStock === undefined) return null;
+                      
+                      return (
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          variantStock > 0 
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
+                            : "bg-rose-50 text-rose-700 border border-rose-100"
+                        }`}>
+                          {variantStock > 0 ? `In Stock (${variantStock})` : "Out of Stock"}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  
+                  <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none snap-x">
+                    {selectedProduct.variants.map((v) => {
+                      const vColor = v.colourName || v.color || "";
+                      const isSelected = selectedColor.toLowerCase() === vColor.toLowerCase();
+                      const thumbnail = v.colourThumbnail || (v.images && v.images.length > 0 ? v.images[0] : selectedProduct.images[0]);
+                      const vPrice = v.sellingPrice !== undefined ? v.sellingPrice : (v.price !== undefined ? v.price : selectedProduct.price);
+                      const vMrp = v.mrp !== undefined ? v.mrp : (v.originalPrice !== undefined ? v.originalPrice : selectedProduct.originalPrice);
+                      const vDiscount = vMrp > vPrice 
+                        ? Math.round(((vMrp - vPrice) / vMrp) * 100) 
+                        : 0;
+                        
+                      return (
+                        <button
+                          key={vColor}
+                          type="button"
+                          onClick={() => handleColorChange(vColor)}
+                          className={`flex-shrink-0 snap-start w-24 bg-white border rounded-2xl p-1.5 text-left transition-all ${
+                            isSelected 
+                              ? "border-black ring-2 ring-black/5 scale-[1.02] shadow-sm" 
+                              : "border-neutral-100 hover:border-neutral-300 shadow-2xs"
+                          }`}
+                        >
+                          <div className="h-14 w-full rounded-lg bg-neutral-50 flex items-center justify-center p-0.5 relative mb-1 overflow-hidden">
+                            <img 
+                              src={thumbnail} 
+                              alt={vColor} 
+                              className="max-h-full max-w-full object-contain mix-blend-multiply" 
+                              referrerPolicy="no-referrer"
+                            />
+                            <div 
+                              className="absolute bottom-1 right-1 w-3 h-3 rounded-full border border-white shadow-xs" 
+                              style={{ backgroundColor: getColorHex(vColor) }}
+                            />
+                          </div>
+                          
+                          <div className="space-y-0.2">
+                            <p className="text-[9px] font-black text-neutral-800 truncate leading-tight">{vColor}</p>
+                            <p className="text-[9px] font-extrabold text-neutral-900">₹{vPrice}</p>
+                            {vDiscount > 0 && (
+                              <span className="text-[8px] text-red-600 font-extrabold block">
+                                {vDiscount}% OFF
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* Classic Swatch for backward compatibility */
+                selectedProduct.colors && selectedProduct.colors.length > 0 && (
+                  <div className="mb-5">
+                    <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider block mb-2">Select Color</span>
+                    <div className="flex gap-2">
+                      {selectedProduct.colors.map((color) => (
+                        <button
+                          key={color}
+                          onClick={() => handleColorChange(color)}
+                          style={{ backgroundColor: getColorHex(color) }}
+                          className={`w-8 h-8 rounded-full border-2 transition-transform relative ${
+                            selectedColor === color 
+                              ? "border-neutral-900 scale-110" 
+                              : "border-transparent hover:scale-105"
+                          }`}
+                        >
+                          {selectedColor === color && (
+                            <span className="absolute inset-0 flex items-center justify-center text-white">
+                              <Check size={12} strokeWidth={3} className="mix-blend-difference" />
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* Sizes Selection */}
+              <div className="mb-6">
+                <div className="flex justify-between items-center mb-2.5">
+                  <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider">Select Size</span>
+                  <button 
+                    onClick={() => setIsSizeGuideOpen(true)}
+                    className="text-xs text-black font-extrabold flex items-center gap-1 hover:underline"
+                  >
+                    <Ruler size={12} /> Sizing Calculator
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  {displaySizes.map((sz) => (
                     <button
-                      key={color}
-                      onClick={() => setSelectedColor(color)}
-                      style={{ backgroundColor: color }}
-                      className={`w-8 h-8 rounded-full border-2 transition-transform relative ${
-                        selectedColor === color 
-                          ? "border-neutral-900 scale-110" 
-                          : "border-transparent hover:scale-105"
+                      key={sz}
+                      onClick={() => setSelectedSize(sz)}
+                      className={`py-2 text-center text-xs font-bold rounded-xl transition border ${
+                        selectedSize === sz 
+                          ? "bg-black text-white border-black" 
+                          : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300"
                       }`}
                     >
-                      {selectedColor === color && (
-                        <span className="absolute inset-0 flex items-center justify-center text-white">
-                          <Check size={12} strokeWidth={3} className="mix-blend-difference" />
-                        </span>
-                      )}
+                      {sz}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
 
-            {/* Sizes Selection */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-2.5">
-                <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-wider">Select Size</span>
+              {/* Description */}
+              <div className="mb-6 border-t border-neutral-100 pt-4">
+                <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest block mb-1.5">Description</span>
+                <p className="text-xs text-neutral-500 leading-relaxed font-normal">
+                  {displayDescription}
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="grid grid-cols-2 gap-3.5">
                 <button 
-                  onClick={() => setIsSizeGuideOpen(true)}
-                  className="text-xs text-black font-extrabold flex items-center gap-1 hover:underline"
+                  onClick={() => {
+                    addToCart();
+                    setScreen("cart");
+                    setIsCheckoutOpen(true);
+                  }}
+                  className="py-3.5 border border-black rounded-2xl font-bold text-xs text-neutral-900 bg-white hover:bg-neutral-50 transition cursor-pointer text-center"
                 >
-                  <Ruler size={12} /> Sizing Calculator
+                  Buy Now
+                </button>
+                <button 
+                  onClick={(e) => {
+                    addToCart(e);
+                    setIsAddingToCart(true);
+                    setTimeout(() => setIsAddingToCart(false), 1500);
+                  }}
+                  disabled={isAddingToCart}
+                  className="py-3.5 bg-black hover:bg-neutral-900 rounded-2xl font-bold text-xs text-white transition cursor-pointer text-center flex items-center justify-center gap-1.5 min-h-[46px]"
+                >
+                  <AnimatePresence mode="wait">
+                    {isAddingToCart ? (
+                      <motion.span
+                        key="success"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="flex items-center gap-1.5 text-emerald-400 font-extrabold"
+                      >
+                        <ShoppingBag size={14} className="animate-bounce" /> Added!
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="add"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                      >
+                        Add to Cart
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                 </button>
               </div>
-
-              <div className="grid grid-cols-4 gap-2">
-                {selectedProduct.sizes.map((sz) => (
-                  <button
-                    key={sz}
-                    onClick={() => setSelectedSize(sz)}
-                    className={`py-2 text-center text-xs font-bold rounded-xl transition border ${
-                      selectedSize === sz 
-                        ? "bg-black text-white border-black" 
-                        : "bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300"
-                    }`}
-                  >
-                    {sz}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Description */}
-            <div className="mb-6 border-t border-neutral-100 pt-4">
-              <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest block mb-1.5">Description</span>
-              <p className="text-xs text-neutral-500 leading-relaxed font-normal">
-                {selectedProduct.description}
-              </p>
-            </div>
-
-            {/* Action buttons */}
-            <div className="grid grid-cols-2 gap-3.5">
-              <button 
-                onClick={() => {
-                  addToCart();
-                  setScreen("cart");
-                  setIsCheckoutOpen(true);
-                }}
-                className="py-3.5 border border-black rounded-2xl font-bold text-xs text-neutral-900 bg-white hover:bg-neutral-50 transition cursor-pointer text-center"
-              >
-                Buy Now
-              </button>
-              <button 
-                onClick={(e) => {
-                  addToCart(e);
-                  setIsAddingToCart(true);
-                  setTimeout(() => setIsAddingToCart(false), 1500);
-                }}
-                disabled={isAddingToCart}
-                className="py-3.5 bg-black hover:bg-neutral-900 rounded-2xl font-bold text-xs text-white transition cursor-pointer text-center flex items-center justify-center gap-1.5 min-h-[46px]"
-              >
-                <AnimatePresence mode="wait">
-                  {isAddingToCart ? (
-                    <motion.span
-                      key="success"
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="flex items-center gap-1.5 text-emerald-400 font-extrabold"
-                    >
-                      <ShoppingBag size={14} className="animate-bounce" /> Added!
-                    </motion.span>
-                  ) : (
-                    <motion.span
-                      key="add"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      Add to Cart
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </button>
-            </div>
-          </motion.div>
-        )}
+            </motion.div>
+          );
+        })()}
 
         {/* VIEW 4: DELIVERY SHOPPING BAG & CHECKOUT */}
         {screen === "cart" && (
