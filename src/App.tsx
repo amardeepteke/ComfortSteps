@@ -113,12 +113,30 @@ export default function App() {
     }
   };
 
+  const handleUpdateOrder = async (orderId: string, updatedFields: Partial<Order>) => {
+    const updated = orders.map(o => o.id === orderId ? { ...o, ...updatedFields } : o);
+    setOrders(updated);
+
+    if (!firebaseActive) {
+      localStorage.setItem("footwear_orders", JSON.stringify(updated));
+    } else if (db) {
+      try {
+        // Since we import doc and collection from firebase, we can import updateDoc from firebase/firestore if not already imported or use setDoc with merge
+        // Let's import updateDoc in App.tsx if needed, or we can use setDoc with merge: true which is already imported!
+        await setDoc(doc(db, "orders", orderId), updatedFields, { merge: true });
+      } catch (err) {
+        console.error("Firestore order update error", err);
+      }
+    }
+  };
+
   return (
     <div className="relative min-h-screen bg-slate-50">
       <StoreFront 
         products={products}
         orders={orders}
         onAddOrder={handleAddOrder}
+        onUpdateOrder={handleUpdateOrder}
       />
     </div>
   );

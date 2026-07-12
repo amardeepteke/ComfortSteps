@@ -73,7 +73,7 @@ export interface Order {
   customerEmail: string;
   customerPhone: string;
   shippingAddress: string;
-  status: "Pending" | "Processing" | "Shipped" | "Delivered";
+  status: "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
   createdAt: string;
   paymentMethod: "COD" | "UPI" | "Card" | "GooglePay" | string;
 }

@@ -31,7 +31,7 @@ import {
 import { Product, CartItem, Order, UserProfile } from "../types";
 import { loginWithGoogle, logoutUser, auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, addDoc, doc, setDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, doc, setDoc, updateDoc, onSnapshot, query, where } from "firebase/firestore";
 import ComfortStepsLogo from "./ComfortStepsLogo";
 import { 
   LogOut, 
@@ -41,13 +41,15 @@ import {
   Edit, 
   Trash2, 
   Lock,
-  Compass
+  Compass,
+  MoreVertical
 } from "lucide-react";
 
 interface StoreFrontProps {
   products: Product[];
   orders?: Order[];
   onAddOrder: (order: Order) => void;
+  onUpdateOrder?: (orderId: string, updatedFields: Partial<Order>) => void;
 }
 
 interface FlyingItem {
@@ -69,9 +71,10 @@ const isStockPhoto = (url: string): boolean => {
   );
 };
 
-export default function StoreFront({ products, orders = [], onAddOrder }: StoreFrontProps) {
-  // Main view state: "onboarding" | "dashboard" | "detail" | "cart" | "register"
-  const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register">("onboarding");
+export default function StoreFront({ products, orders = [], onAddOrder, onUpdateOrder }: StoreFrontProps) {
+  // Main view state: onboarding, dashboard, detail, cart, register, my_orders, privacy_policy, refund_policy
+  const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register" | "my_orders" | "privacy_policy" | "refund_policy">("onboarding");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // Tab within dashboard: "home" | "store" | "wishlist" | "profile"
   const [activeTab, setActiveTab] = useState<"home" | "store" | "wishlist" | "profile">("home");
@@ -185,6 +188,15 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
     }
   };
 
+  const [settings, setSettings] = useState<any>({
+    privacyPolicyText: "Your privacy is important to us. We collect and use your data only to process orders and improve your shopping experience.",
+    termsConditionsText: "By using our website, you agree to our terms of service. All orders are subject to availability and acceptance.",
+    refundPolicyText: "If you are not fully satisfied with your purchase, you can return or exchange the items within 30 days of delivery. The products must be unworn and in their original packaging.",
+    aboutUsText: "Welcome to Comfort Steps, where luxury meets unmatched comfort. We curate the finest footwear for women, crafted with passion and premium materials."
+  });
+
+  const [fetchedOrders, setFetchedOrders] = useState<Order[]>([]);
+
   // Sync Onboarding Images & Merchant UPI Config from Firestore in real-time
   useEffect(() => {
     if (!db) return;
@@ -254,10 +266,34 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
       console.error("Firestore banner sync error:", error);
     });
 
+    // 4. Subscribe to Admin Settings Document
+    const settingsDocRef = doc(db, "config", "settings");
+    const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSettings((prev: any) => ({
+          ...prev,
+          ...data
+        }));
+        if (data.homepageBannerTitle) {
+          setBannerConfig(prev => ({
+            ...prev,
+            title: data.homepageBannerTitle || prev.title,
+            imageUrl: data.homepageBannerImageUrl || prev.imageUrl,
+            bgGradient: data.homepageBannerBgGradient || prev.bgGradient,
+            tagline: data.homepageBannerTagline || prev.tagline
+          }));
+        }
+      }
+    }, (error) => {
+      console.error("Firestore settings sync error:", error);
+    });
+
     return () => {
       unsubOnboarding();
       unsubMerchant();
       unsubBanner();
+      unsubSettings();
     };
   }, [db]);
 
@@ -402,6 +438,56 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
       setCheckoutAddress(profileAddress || "");
     }
   }, [isCheckoutOpen, profileName, profileEmail, profilePhone, profileAddress, currentUser]);
+
+  // Real-time listener for the logged-in user's real orders
+  useEffect(() => {
+    if (!firebaseActive || !db) {
+      // LocalStorage mode fallback
+      const localOrders = localStorage.getItem("footwear_orders");
+      if (localOrders) {
+        try {
+          const parsed = JSON.parse(localOrders) as Order[];
+          const email = currentUser?.email || profileEmail;
+          if (email) {
+            setFetchedOrders(parsed.filter((ord: any) => ord.customerEmail?.toLowerCase() === email.toLowerCase()));
+          } else {
+            setFetchedOrders([]);
+          }
+        } catch (e) {
+          setFetchedOrders([]);
+        }
+      } else {
+        setFetchedOrders([]);
+      }
+      return;
+    }
+
+    const email = currentUser?.email || profileEmail;
+    if (!email) {
+      setFetchedOrders([]);
+      return;
+    }
+
+    // Fetch ONLY the logged-in user's real orders from the database
+    const ordersQuery = query(
+      collection(db, "orders"),
+      where("customerEmail", "==", email.toLowerCase())
+    );
+
+    const unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
+      const orderList: Order[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        orderList.push({ id: docSnap.id, ...data } as Order);
+      });
+      // Sort orders by date descending
+      setFetchedOrders(orderList.sort((a, b) => new Date(b.createdAt).getTime() - a.createdAt.localeCompare(b.createdAt)));
+    }, (error) => {
+      console.error("Error fetching user's real orders from database:", error);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser?.email, profileEmail, firebaseActive]);
 
   const handleLogout = async () => {
     if (firebaseActive && auth) {
@@ -751,7 +837,7 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
       })),
       totalAmount: totalCartPrice,
       customerName: checkoutName || profileName || "Vanish Teke",
-      customerEmail: checkoutEmail || profileEmail || "vanish@ssense.com",
+      customerEmail: (checkoutEmail || profileEmail || "vanish@ssense.com").trim().toLowerCase(),
       customerPhone: checkoutPhone || profilePhone,
       shippingAddress: checkoutAddress || profileAddress,
       status: "Pending",
@@ -776,6 +862,33 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
     setIsCheckoutOpen(false);
   };
 
+  const handleUpdateOrder = async (orderId: string, updatedFields: Partial<Order>) => {
+    if (onUpdateOrder) {
+      await onUpdateOrder(orderId, updatedFields);
+    } else if (db) {
+      try {
+        await updateDoc(doc(db, "orders", orderId), updatedFields);
+      } catch (err) {
+        console.error("Firestore order update error", err);
+      }
+    } else {
+      const localOrders = localStorage.getItem("footwear_orders");
+      if (localOrders) {
+        try {
+          const parsed = JSON.parse(localOrders) as Order[];
+          const updated = parsed.map(o => o.id === orderId ? { ...o, ...updatedFields } : o);
+          localStorage.setItem("footwear_orders", JSON.stringify(updated));
+          const email = currentUser?.email || profileEmail;
+          if (email) {
+            setFetchedOrders(updated.filter(o => o.customerEmail?.toLowerCase() === email.toLowerCase()));
+          }
+        } catch (e) {
+          console.error("LocalStorage update order error", e);
+        }
+      }
+    }
+  };
+
   // Filter Products Dynamically
   const filteredProducts = products.filter(prod => {
     const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -797,10 +910,7 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
 
   const featuredProducts = products.slice(0, 4);
 
-  const myOrders = orders.filter(ord => {
-    const userEmailToMatch = currentUser?.email || profileEmail;
-    return userEmailToMatch && ord.customerEmail?.toLowerCase() === userEmailToMatch.toLowerCase();
-  });
+  const myOrders = fetchedOrders;
 
   return (
     <div id="storefront-root" className="min-h-screen bg-[#FBFBFA] text-neutral-900 font-sans selection:bg-neutral-900 selection:text-white pb-32">
@@ -981,34 +1091,88 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
             exit={{ opacity: 0 }}
             className="max-w-md mx-auto px-4 py-6"
           >
-            {/* Header: Avatar, Name, Bell and Cart */}
-            <div id="dashboard-header" className="flex justify-between items-center mb-6">
+            {/* Header: Three-dot Menu, Name, Bell and Cart */}
+            <div id="dashboard-header" className="flex justify-between items-center mb-6 relative">
               <div className="flex items-center gap-3">
-                {!currentUser ? (
-                  <div 
-                    onClick={() => setActiveTab("profile")}
-                    className="w-11 h-11 rounded-full ring-4 ring-neutral-100 bg-neutral-50 border border-neutral-150 flex items-center justify-center text-neutral-400 cursor-pointer hover:bg-neutral-100 transition duration-200"
+                <div className="relative">
+                  <button 
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="w-11 h-11 rounded-full ring-4 ring-neutral-100 bg-white border border-neutral-150 flex items-center justify-center text-neutral-700 cursor-pointer hover:bg-neutral-50 transition duration-200"
+                    title="Menu"
                   >
-                    <User size={18} />
-                  </div>
-                ) : (
-                  profilePic ? (
-                    <img 
-                      src={profilePic} 
-                      alt="Avatar" 
-                      className="w-11 h-11 rounded-full object-cover ring-4 ring-neutral-100 cursor-pointer"
-                      onClick={() => setActiveTab("profile")}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div 
-                      onClick={() => setActiveTab("profile")}
-                      className="w-11 h-11 rounded-full ring-4 ring-neutral-100 bg-black text-white flex items-center justify-center text-xs font-black cursor-pointer uppercase"
-                    >
-                      {profileName ? profileName.trim().charAt(0) : "U"}
-                    </div>
-                  )
-                )}
+                    <MoreVertical size={18} />
+                  </button>
+
+                  <AnimatePresence>
+                    {isMenuOpen && (
+                      <>
+                        {/* Overlay to close menu */}
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setIsMenuOpen(false)}
+                        />
+                        
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute left-0 mt-2 w-48 bg-white border border-neutral-100 rounded-2xl shadow-xl py-2 z-50 text-left"
+                        >
+                          <button
+                            onClick={() => {
+                              setScreen("dashboard");
+                              setActiveTab("home");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            Home
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setScreen("my_orders");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            My Orders
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setScreen("privacy_policy");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            Privacy Policy
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setScreen("refund_policy");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            Refund Policy
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 <div>
                   <h3 className="font-black text-neutral-900 text-sm leading-tight">
                     Hello{currentUser && profileName && profileName.trim() !== "" ? ` ${profileName.trim().split(" ")[0]}` : ""}
@@ -2674,6 +2838,330 @@ export default function StoreFront({ products, orders = [], onAddOrder }: StoreF
             >
               Skip Registration & Browse Store
             </button>
+          </motion.div>
+        )}
+
+        {/* VIEW 6: MY ORDERS SCREEN */}
+        {screen === "my_orders" && (
+          <motion.div
+            key="my_orders"
+            initial={{ opacity: 0, x: 15 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -15 }}
+            className="max-w-md mx-auto px-4 py-6 pb-28 space-y-6"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={() => setScreen("dashboard")}
+                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">My Orders</h2>
+              <div className="w-10 h-10" />
+            </div>
+
+            {/* Orders List */}
+            {!currentUser ? (
+              <div className="bg-white rounded-[26px] p-8 border border-neutral-100 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
+                  <Lock size={32} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-display font-black text-base text-neutral-900">Login Required</h3>
+                  <p className="text-xs text-[#8E8E8A] leading-relaxed max-w-xs mx-auto">
+                    Please log in to your account to view, track, and manage your luxury footwear orders.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setScreen("dashboard"); setActiveTab("profile"); }}
+                  className="px-5 py-2.5 bg-black text-white text-xs font-bold rounded-xl hover:scale-105 transition"
+                >
+                  Log In Now
+                </button>
+              </div>
+            ) : myOrders.length === 0 ? (
+              <div className="bg-white rounded-[26px] p-8 border border-neutral-100 shadow-xs text-center space-y-4">
+                <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
+                  <Package size={32} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-display font-black text-base text-neutral-900">No Orders Found</h3>
+                  <p className="text-xs text-[#8E8E8A] leading-relaxed max-w-xs mx-auto">
+                    You haven't placed any footwear orders yet. Explore our luxury collection to make your first purchase!
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setScreen("dashboard"); setActiveTab("store"); }}
+                  className="px-5 py-2.5 bg-black text-white text-xs font-bold rounded-xl hover:scale-105 transition"
+                >
+                  Shop Collection
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {myOrders.map((ord) => {
+                  const isCancellable = ord.status === "Pending" || ord.status === "Processing";
+                  const isAddressEditable = ord.status === "Pending" || ord.status === "Processing";
+                  const isPaymentEditable = ord.status === "Pending" || ord.status === "Processing";
+                  
+                  return (
+                    <div key={ord.id} className="bg-white border border-neutral-150 rounded-[24px] p-4 shadow-sm space-y-4 text-left">
+                      {/* Top Bar with ID, Status badge and Date */}
+                      <div className="flex justify-between items-start border-b border-neutral-100 pb-3">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-extrabold text-neutral-900 text-xs">{ord.id}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(ord.id);
+                              }}
+                              className="text-neutral-400 hover:text-black transition"
+                              title="Copy ID"
+                            >
+                              <Copy size={11} />
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-neutral-400 font-medium block mt-0.5">
+                            Placed on {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                          ord.status === "Pending" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                          ord.status === "Processing" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          ord.status === "Shipped" ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
+                          ord.status === "Delivered" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                          ord.status === "Cancelled" ? "bg-rose-50 text-rose-700 border-rose-200" :
+                          "bg-neutral-50 text-neutral-700 border-neutral-200"
+                        }`}>
+                          ● {ord.status}
+                        </span>
+                      </div>
+
+                      {/* Items */}
+                      <div className="space-y-3">
+                        {ord.items.map((item, idx) => (
+                          <div key={idx} className="flex gap-3">
+                            <div className="w-16 h-16 bg-[#F5F5F4] rounded-xl flex items-center justify-center p-1 border border-neutral-100 overflow-hidden shrink-0">
+                              <img src={item.product.images[0]} alt="" className="max-h-full max-w-full object-contain mix-blend-multiply" referrerPolicy="no-referrer" />
+                            </div>
+                            <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                              <div>
+                                <h4 className="font-bold text-xs text-neutral-900 truncate leading-tight">{item.product.name}</h4>
+                                <p className="text-[10px] text-[#8E8E8A] mt-0.5">
+                                  Color: <span className="font-semibold text-neutral-700">{item.selectedColor}</span> • Size: <span className="font-semibold text-neutral-700">{item.selectedSize}</span>
+                                </p>
+                              </div>
+                              <div className="flex justify-between items-baseline">
+                                <span className="text-[10px] text-neutral-400">Qty: {item.quantity}</span>
+                                <span className="text-xs font-black text-neutral-900">₹{item.product.price}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Total Amount, Payment details, Shipping Address */}
+                      <div className="bg-neutral-50 rounded-2xl p-3 space-y-2.5 text-xs border border-neutral-100">
+                        {/* Total Amount */}
+                        <div className="flex justify-between items-center font-bold">
+                          <span className="text-[#8E8E8A]">Total Amount:</span>
+                          <span className="text-neutral-900 text-sm font-black">₹{ord.totalAmount}</span>
+                        </div>
+
+                        {/* Payment Method section */}
+                        <div className="border-t border-neutral-200/50 pt-2.5 space-y-1">
+                          <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-wider block">Payment Method</span>
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-neutral-800 flex items-center gap-1.5">
+                              <CreditCard size={12} className="text-neutral-500" />
+                              {ord.paymentMethod === "COD" ? "Cash on Delivery" : ord.paymentMethod}
+                            </span>
+                            
+                            {isPaymentEditable && (
+                              <select
+                                value={ord.paymentMethod}
+                                onChange={(e) => handleUpdateOrder(ord.id, { paymentMethod: e.target.value })}
+                                className="bg-white border border-neutral-200 text-[10px] font-bold text-neutral-700 px-2 py-1 rounded-lg focus:outline-none"
+                              >
+                                <option value="COD">Cash on Delivery</option>
+                                <option value="UPI">UPI</option>
+                                <option value="GooglePay">Google Pay</option>
+                                <option value="Card">Card</option>
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Shipping Address section */}
+                        <div className="border-t border-neutral-200/50 pt-2.5 space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-wider">Delivery Address</span>
+                            {isAddressEditable && (
+                              <button
+                                onClick={() => {
+                                  const newAddr = prompt("Enter new shipping address:", ord.shippingAddress);
+                                  if (newAddr !== null && newAddr.trim() !== "") {
+                                    handleUpdateOrder(ord.id, { shippingAddress: newAddr.trim() });
+                                  }
+                                }}
+                                className="text-[9px] text-[#E2583E] hover:underline font-extrabold"
+                              >
+                                Edit Address
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-neutral-600 font-medium leading-relaxed">
+                            {ord.shippingAddress}
+                          </p>
+                          <p className="text-[10px] text-[#8E8E8A] font-bold">
+                            Phone: {ord.customerPhone}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Live Tracking Progress bar */}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-wider block">Order Progress</span>
+                        {ord.status === "Cancelled" ? (
+                          <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl p-2.5 text-red-700 text-xs font-bold">
+                            <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                            <span>This order has been cancelled.</span>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-1 text-center relative pt-1">
+                            {/* Track bar progress */}
+                            <div className="absolute top-3 left-[12%] right-[12%] h-[3px] bg-neutral-100 -z-10">
+                              <div 
+                                className="h-full bg-black transition-all duration-500" 
+                                style={{ 
+                                  width: ord.status === "Pending" ? "0%" :
+                                         ord.status === "Processing" ? "33%" :
+                                         ord.status === "Shipped" ? "66%" : "100%"
+                                }} 
+                              />
+                            </div>
+                            
+                            {[
+                              { label: "Pending", val: "Pending" },
+                              { label: "Processing", val: "Processing" },
+                              { label: "Shipped", val: "Shipped" },
+                              { label: "Delivered", val: "Delivered" }
+                            ].map((step, idx) => {
+                              const steps = ["Pending", "Processing", "Shipped", "Delivered"];
+                              const ordIdx = steps.indexOf(ord.status);
+                              const stepIdx = steps.indexOf(step.val);
+                              const isActive = stepIdx <= ordIdx;
+                              
+                              return (
+                                <div key={idx} className="flex flex-col items-center">
+                                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black ${
+                                    isActive ? "bg-black text-white" : "bg-neutral-200 text-neutral-500"
+                                  }`}>
+                                    {isActive ? "✓" : idx + 1}
+                                  </div>
+                                  <span className={`text-[8px] mt-1 font-extrabold uppercase tracking-wide ${
+                                    isActive ? "text-neutral-900" : "text-neutral-400"
+                                  }`}>
+                                    {step.label}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cancel Button */}
+                      {isCancellable && (
+                        <div className="border-t border-neutral-100 pt-3">
+                          <button
+                            onClick={() => {
+                              if (confirm("Are you sure you want to cancel this order? This action cannot be undone.")) {
+                                handleUpdateOrder(ord.id, { status: "Cancelled" });
+                              }
+                            }}
+                            className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-rose-600 font-extrabold text-xs rounded-xl transition cursor-pointer"
+                          >
+                            Cancel Order
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* VIEW 7: PRIVACY POLICY */}
+        {screen === "privacy_policy" && (
+          <motion.div
+            key="privacy_policy"
+            initial={{ opacity: 0, x: 15 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -15 }}
+            className="max-w-md mx-auto px-4 py-6 pb-28 space-y-6"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={() => setScreen("dashboard")}
+                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">Privacy Policy</h2>
+              <div className="w-10 h-10" />
+            </div>
+
+            {/* Content card */}
+            <div className="bg-white border border-neutral-100 rounded-[28px] p-6 shadow-sm space-y-4 text-left">
+              <div className="w-12 h-12 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                <ShieldCheck size={24} />
+              </div>
+              <h3 className="font-display font-black text-base text-neutral-900">Privacy & Data Security</h3>
+              <p className="text-xs text-neutral-600 leading-relaxed font-medium whitespace-pre-wrap">
+                {settings.privacyPolicyText || "Your privacy is important to us. We collect and use your data only to process orders and improve your shopping experience."}
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* VIEW 8: REFUND POLICY */}
+        {screen === "refund_policy" && (
+          <motion.div
+            key="refund_policy"
+            initial={{ opacity: 0, x: 15 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -15 }}
+            className="max-w-md mx-auto px-4 py-6 pb-28 space-y-6"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={() => setScreen("dashboard")}
+                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">Refund Policy</h2>
+              <div className="w-10 h-10" />
+            </div>
+
+            {/* Content card */}
+            <div className="bg-white border border-neutral-100 rounded-[28px] p-6 shadow-sm space-y-4 text-left">
+              <div className="w-12 h-12 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                <Sliders size={24} />
+              </div>
+              <h3 className="font-display font-black text-base text-neutral-900">Refunds & Returns</h3>
+              <p className="text-xs text-neutral-600 leading-relaxed font-medium whitespace-pre-wrap">
+                {settings.refundPolicyText || settings.termsConditionsText || "If you are not fully satisfied with your purchase, you can return or exchange the items within 30 days of delivery. The products must be unworn and in their original packaging."}
+              </p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
