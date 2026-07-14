@@ -72,8 +72,8 @@ const isStockPhoto = (url: string): boolean => {
 };
 
 export default function StoreFront({ products, orders = [], onAddOrder, onUpdateOrder }: StoreFrontProps) {
-  // Main view state: onboarding, dashboard, detail, cart, register, my_orders, privacy_policy, refund_policy
-  const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register" | "my_orders" | "privacy_policy" | "refund_policy">("onboarding");
+  // Main view state: onboarding, dashboard, detail, cart, register, my_orders, privacy_policy, refund_policy, terms_and_conditions, contact_us
+  const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register" | "my_orders" | "privacy_policy" | "refund_policy" | "terms_and_conditions" | "contact_us">("onboarding");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // Tab within dashboard: "home" | "store" | "wishlist" | "profile"
@@ -108,6 +108,14 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   const [addrCity, setAddrCity] = useState<string>(() => localStorage.getItem("comfort_addr_city") || "");
   const [addrPinCode, setAddrPinCode] = useState<string>(() => localStorage.getItem("comfort_addr_pin_code") || "");
   const [activeProfileSection, setActiveProfileSection] = useState<"profile" | "address" | null>(null);
+  const [profileSubView, setProfileSubView] = useState<"main" | "personal_info" | "address_info" | null>(null);
+
+  // Contact Us state variables
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isMessageSent, setIsMessageSent] = useState(false);
 
   // Add to Cart button animation state
   const [isAddingToCart, setIsAddingToCart] = useState(false);
@@ -534,8 +542,26 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     }
   };
 
-  // Save profile settings
-  const handleSaveProfile = (e: React.FormEvent) => {
+  // Save basic profile settings
+  const handleSaveBasicProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+    
+    localStorage.setItem("comfort_pref_name", profileName);
+    localStorage.setItem("comfort_pref_email", profileEmail);
+    localStorage.setItem("comfort_pref_size", preferredSize);
+
+    setTimeout(() => {
+      setIsSavingProfile(false);
+      setProfileSaveSuccess(true);
+      setTimeout(() => setProfileSaveSuccess(false), 3000);
+      setProfileSubView("main");
+      setActiveProfileSection(null);
+    }, 800);
+  };
+
+  // Save address settings
+  const handleSaveAddressProfile = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingProfile(true);
     
@@ -548,10 +574,8 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     setProfileAddress(composedAddr);
 
     localStorage.setItem("comfort_pref_name", composedName);
-    localStorage.setItem("comfort_pref_email", profileEmail);
     localStorage.setItem("comfort_pref_phone", addrPhone);
     localStorage.setItem("comfort_pref_addr", composedAddr);
-    localStorage.setItem("comfort_pref_size", preferredSize);
 
     // Save individual parts
     localStorage.setItem("comfort_addr_first_name", addrFirstName);
@@ -567,8 +591,19 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
       setIsSavingProfile(false);
       setProfileSaveSuccess(true);
       setTimeout(() => setProfileSaveSuccess(false), 3000);
-      setActiveProfileSection(null); // Close active editing section
+      setProfileSubView("main");
+      setActiveProfileSection(null);
     }, 800);
+  };
+
+  // Save profile settings
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (profileSubView === "personal_info" || activeProfileSection === "profile") {
+      handleSaveBasicProfile(e);
+    } else {
+      handleSaveAddressProfile(e);
+    }
   };
 
   // Check auth and redirect if unregistered
@@ -863,9 +898,16 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   };
 
   const handleUpdateOrder = async (orderId: string, updatedFields: Partial<Order>) => {
+    // 1. Instantly update local state for real-time responsiveness
+    setFetchedOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updatedFields } : o));
+
+    // 2. Propagate to parent state if available
     if (onUpdateOrder) {
       await onUpdateOrder(orderId, updatedFields);
-    } else if (db) {
+    }
+    
+    // 3. Persist to database or localStorage
+    if (db) {
       try {
         await updateDoc(doc(db, "orders", orderId), updatedFields);
       } catch (err) {
@@ -878,10 +920,6 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
           const parsed = JSON.parse(localOrders) as Order[];
           const updated = parsed.map(o => o.id === orderId ? { ...o, ...updatedFields } : o);
           localStorage.setItem("footwear_orders", JSON.stringify(updated));
-          const email = currentUser?.email || profileEmail;
-          if (email) {
-            setFetchedOrders(updated.filter(o => o.customerEmail?.toLowerCase() === email.toLowerCase()));
-          }
         } catch (e) {
           console.error("LocalStorage update order error", e);
         }
@@ -950,7 +988,11 @@ Total Paid:     ₹${ord.totalAmount}
 
   const featuredProducts = products.slice(0, 4);
 
-  const myOrders = fetchedOrders;
+  const myOrders = (orders && orders.length > 0 ? orders : fetchedOrders).filter(o => {
+    const email = currentUser?.email || profileEmail;
+    if (!email) return false;
+    return o.customerEmail?.toLowerCase() === email.toLowerCase();
+  });
 
   return (
     <div id="storefront-root" className="min-h-screen bg-[#FBFBFA] text-neutral-900 font-sans selection:bg-neutral-900 selection:text-white pb-32">
@@ -1157,8 +1199,12 @@ Total Paid:     ₹${ord.totalAmount}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95, y: -10 }}
                           transition={{ duration: 0.15 }}
-                          className="absolute left-0 mt-2 w-48 bg-white border border-neutral-100 rounded-2xl shadow-xl py-2 z-50 text-left"
+                          className="absolute left-0 mt-2 w-56 bg-white border border-neutral-100 rounded-3xl shadow-2xl py-3 z-50 text-left overflow-hidden"
                         >
+                          <div className="px-4 py-1.5 border-b border-neutral-50 mb-1.5">
+                            <span className="text-[9px] uppercase tracking-widest text-neutral-400 font-extrabold block">Navigation</span>
+                          </div>
+
                           <button
                             onClick={() => {
                               setScreen("dashboard");
@@ -1166,10 +1212,33 @@ Total Paid:     ₹${ord.totalAmount}
                               setSelectedProduct(null);
                               setIsMenuOpen(false);
                             }}
-                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "dashboard" && activeTab === "home" && !selectedProduct
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                            </svg>
                             Home
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setScreen("dashboard");
+                              setActiveTab("store");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "dashboard" && activeTab === "store" && !selectedProduct
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
+                          >
+                            <SlidersHorizontal size={16} className="shrink-0 text-current" />
+                            Categories
                           </button>
                           
                           <button
@@ -1178,11 +1247,51 @@ Total Paid:     ₹${ord.totalAmount}
                               setSelectedProduct(null);
                               setIsMenuOpen(false);
                             }}
-                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "my_orders"
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            <Package size={16} className="shrink-0 text-current" />
                             My Orders
                           </button>
+
+                          <button
+                            onClick={() => {
+                              setScreen("dashboard");
+                              setActiveTab("wishlist");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "dashboard" && activeTab === "wishlist" && !selectedProduct
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
+                          >
+                            <Heart size={16} className="shrink-0 text-current" />
+                            Wishlist
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setScreen("cart");
+                              setIsMenuOpen(false);
+                            }}
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "cart"
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
+                          >
+                            <ShoppingBag size={16} className="shrink-0 text-current" />
+                            Cart
+                          </button>
+
+                          <div className="px-4 py-1.5 border-t border-neutral-50 my-1">
+                            <span className="text-[9px] uppercase tracking-widest text-neutral-400 font-extrabold block">Legal & Info</span>
+                          </div>
                           
                           <button
                             onClick={() => {
@@ -1190,9 +1299,13 @@ Total Paid:     ₹${ord.totalAmount}
                               setSelectedProduct(null);
                               setIsMenuOpen(false);
                             }}
-                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "privacy_policy"
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            <ShieldCheck size={16} className="shrink-0 text-current" />
                             Privacy Policy
                           </button>
                           
@@ -1202,11 +1315,67 @@ Total Paid:     ₹${ord.totalAmount}
                               setSelectedProduct(null);
                               setIsMenuOpen(false);
                             }}
-                            className="w-full px-4 py-2 text-xs font-bold text-neutral-700 hover:bg-neutral-50 transition flex items-center gap-2.5"
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "refund_policy"
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-black" />
+                            <Sliders size={16} className="shrink-0 text-current" />
                             Refund Policy
                           </button>
+
+                          <button
+                            onClick={() => {
+                              setScreen("terms_and_conditions");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "terms_and_conditions"
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
+                          >
+                            <svg className="w-4 h-4 shrink-0 text-current" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                            </svg>
+                            Terms & Conditions
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setScreen("contact_us");
+                              setSelectedProduct(null);
+                              setIsMenuOpen(false);
+                            }}
+                            className={`w-full px-4 py-2 text-xs font-bold transition flex items-center gap-3 ${
+                              screen === "contact_us"
+                                ? "bg-neutral-900 text-white" 
+                                : "text-neutral-700 hover:bg-neutral-50"
+                            }`}
+                          >
+                            <Mail size={16} className="shrink-0 text-current" />
+                            Contact Us
+                          </button>
+
+                          {currentUser && (
+                            <>
+                              <div className="border-t border-neutral-50 my-1" />
+                              <button
+                                onClick={() => {
+                                  handleLogout();
+                                  setIsMenuOpen(false);
+                                  setScreen("dashboard");
+                                  setActiveTab("home");
+                                }}
+                                className="w-full px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 transition flex items-center gap-3"
+                              >
+                                <LogOut size={16} className="shrink-0 text-red-600" />
+                                Logout
+                              </button>
+                            </>
+                          )}
                         </motion.div>
                       </>
                     )}
@@ -1719,408 +1888,438 @@ Total Paid:     ₹${ord.totalAmount}
                       </div>
                     ) : (
                       <>
-                        {/* Main visual header with interactive Avatar & Photo Selector */}
-                        <div className="bg-white rounded-[26px] p-5 border border-neutral-100 shadow-xs space-y-4">
-                      <div className="flex items-center gap-4">
-                        <div className="relative">
-                          <img 
-                            src={profilePic} 
-                            alt="Profile" 
-                            className="w-14 h-14 rounded-full object-cover border border-neutral-200"
-                            referrerPolicy="no-referrer"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setIsSelectingPic(!isSelectingPic)}
-                            className="absolute -bottom-1 -right-1 bg-black text-white p-1 rounded-full text-[8px] hover:scale-115 transition shadow-sm cursor-pointer"
-                            title="Edit Avatar"
-                          >
-                            ✏️
-                          </button>
-                        </div>
-                        <div className="space-y-0.5">
-                          <h3 className="font-bold text-neutral-900 text-sm">{profileName}</h3>
-                          <p className="text-xs text-neutral-400 font-medium">{profileEmail}</p>
-                          
-                          <div className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-[#059669] text-[9px] font-extrabold px-2 py-0.5 rounded-full mt-1.5">
-                            <span>✓</span>
-                            <span>Verified Comfort Buyer</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Expandable women avatars selector list */}
-                      {isSelectingPic && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: -5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="p-3 bg-neutral-50 rounded-2xl border border-neutral-100 space-y-2"
-                        >
-                          <span className="text-[9px] font-extrabold uppercase text-neutral-400 tracking-wider block">
-                            Choose Premium Female Avatar
-                          </span>
-                          <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
-                            {DUMMY_AVATARS.map((avatar, idx) => (
+                        {/* 1. Main visual header with interactive Avatar & Photo Selector */}
+                        <div className="bg-white rounded-[28px] p-5 border border-neutral-100 shadow-xs space-y-4">
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <img 
+                                src={profilePic} 
+                                alt="Profile" 
+                                className="w-16 h-16 rounded-full object-cover border border-neutral-150 ring-4 ring-neutral-50"
+                                referrerPolicy="no-referrer"
+                              />
                               <button
-                                key={idx}
                                 type="button"
-                                onClick={() => {
-                                  setProfilePic(avatar);
-                                  localStorage.setItem("comfort_profile_pic", avatar);
-                                  setIsSelectingPic(false);
-                                }}
-                                className={`w-10 h-10 rounded-full overflow-hidden border-2 shrink-0 transition ${
-                                  profilePic === avatar ? "border-black scale-110 shadow-sm" : "border-transparent opacity-70 hover:opacity-100"
-                                }`}
+                                onClick={() => setIsSelectingPic(!isSelectingPic)}
+                                className="absolute -bottom-1 -right-1 bg-black text-white p-1 rounded-full text-[8px] hover:scale-115 transition shadow-sm cursor-pointer"
+                                title="Edit Avatar"
                               >
-                                <img src={avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ✏️
                               </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </div>
-
-                    {/* LIVE ORDER HISTORY LISTING */}
-                    <div>
-                      <h4 className="text-[10px] uppercase font-extrabold tracking-widest text-neutral-400 mb-2">
-                        Order History ({myOrders.length})
-                      </h4>
-
-                      {myOrders.length === 0 ? (
-                        <div className="bg-white rounded-2xl p-6 border border-neutral-100 text-center space-y-2">
-                          <div className="w-10 h-10 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
-                            <History size={16} />
-                          </div>
-                          <h5 className="font-bold text-xs text-neutral-800">No past purchases</h5>
-                          <p className="text-[11px] text-[#8E8E8A] leading-relaxed max-w-[240px] mx-auto">
-                            Place a cash-on-delivery order to test the checkout history logs!
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {myOrders.map((ord) => (
-                            <div key={ord.id} className="bg-white border border-neutral-100 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
-                              <div className="flex justify-between items-center text-[10px]">
-                                <span className="font-extrabold text-neutral-800">{ord.id}</span>
-                                <span className="bg-[#EBF5FF] text-[#1E3A8A] border border-[#BFDBFE] px-2 py-0.5 rounded-full font-bold">
-                                  ● {ord.status}
-                                </span>
+                            </div>
+                            <div className="space-y-0.5 text-left">
+                              <h3 className="font-display font-black text-base text-neutral-900 tracking-tight">{profileName || "Comfort Steps Buyer"}</h3>
+                              <p className="text-xs text-neutral-400 font-medium">{profileEmail}</p>
+                              
+                              <div className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-[#059669] text-[9px] font-extrabold px-2 py-0.5 rounded-full mt-1.5">
+                                <span>✓</span>
+                                <span>Verified Comfort Buyer</span>
                               </div>
+                            </div>
+                          </div>
 
-                              <div className="space-y-1">
-                                {ord.items.map((item, idx) => (
-                                  <div key={idx} className="flex justify-between items-center text-[11px] text-neutral-600">
-                                    <span className="truncate max-w-[70%] font-medium">
-                                      {item.product.name} ({item.selectedSize})
-                                    </span>
-                                    <span>Qty {item.quantity}</span>
-                                  </div>
+                          {/* Expandable women avatars selector list */}
+                          {isSelectingPic && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: -5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-3 bg-neutral-50 rounded-2xl border border-neutral-100 space-y-2 text-left"
+                            >
+                              <span className="text-[9px] font-extrabold uppercase text-neutral-400 tracking-wider block">
+                                Choose Premium Female Avatar
+                              </span>
+                              <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
+                                {DUMMY_AVATARS.map((avatar, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => {
+                                      setProfilePic(avatar);
+                                      localStorage.setItem("comfort_profile_pic", avatar);
+                                      setIsSelectingPic(false);
+                                    }}
+                                    className={`w-10 h-10 rounded-full overflow-hidden border-2 shrink-0 transition ${
+                                      profilePic === avatar ? "border-black scale-110 shadow-sm" : "border-transparent opacity-70 hover:opacity-100"
+                                    }`}
+                                  >
+                                    <img src={avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  </button>
                                 ))}
                               </div>
-
-                              <div className="border-t border-neutral-50 pt-2 flex justify-between items-center text-xs">
-                                <span className="text-[10px] text-neutral-400">
-                                  {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                                <span className="font-extrabold text-neutral-900">₹{ord.totalAmount}</span>
-                              </div>
-                            </div>
-                          ))}
+                            </motion.div>
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Interactive Profile Setting/Editing Panel */}
-                    <div className="bg-white rounded-3xl p-5 border border-neutral-100 shadow-xs space-y-4">
-                      <div className="border-b border-neutral-50 pb-2.5 flex justify-between items-center">
-                        <h4 className="text-[10px] uppercase font-extrabold tracking-widest text-neutral-400 flex items-center gap-1.5">
-                          <Sliders size={12} className="text-black" /> Settings & Preferences
-                        </h4>
-                        {activeProfileSection && (
-                          <button
-                            type="button"
-                            onClick={() => setActiveProfileSection(null)}
-                            className="text-[10px] text-neutral-400 hover:text-black font-extrabold"
+                        {/* SUBVIEWS CONDITIONAL RENDERING */}
+                        
+                        {/* SUBVIEW A: PERSONAL INFORMATION EDITING */}
+                        {profileSubView === "personal_info" && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 15 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -15 }}
+                            className="space-y-5"
                           >
-                            Close
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Display current settings in simplified format */}
-                      {!activeProfileSection && (
-                        <div className="space-y-3">
-                          <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-100/60 flex justify-between items-center">
-                            <div className="space-y-0.5">
-                              <span className="text-[8px] uppercase font-extrabold tracking-wider text-neutral-400 block">Personal Info</span>
-                              <p className="text-xs font-bold text-neutral-800">{profileName}</p>
-                              <p className="text-[10px] text-neutral-400">{profileEmail} • Pref Size US {preferredSize || "None"}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setActiveProfileSection("profile")}
-                              className="text-[10px] bg-black text-white px-3 py-1.5 rounded-xl font-bold hover:scale-105 transition cursor-pointer"
-                            >
-                              Edit Info
-                            </button>
-                          </div>
-
-                          <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-100/60 flex justify-between items-center">
-                            <div className="space-y-0.5 max-w-[70%]">
-                              <span className="text-[8px] uppercase font-extrabold tracking-wider text-neutral-400 block">Delivery Address</span>
-                              <p className="text-xs font-bold text-neutral-800 truncate">{profileAddress || "No address saved"}</p>
-                              <p className="text-[10px] text-neutral-400 truncate">Phone: {profilePhone || "No phone saved"}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setActiveProfileSection("address")}
-                              className="text-[10px] bg-black text-white px-3 py-1.5 rounded-xl font-bold hover:scale-105 transition cursor-pointer shrink-0"
-                            >
-                              Edit Address
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Edit Basic Info Form */}
-                      <AnimatePresence mode="wait">
-                        {activeProfileSection === "profile" && (
-                          <motion.form
-                            key="basic-profile-form"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            onSubmit={handleSaveProfile}
-                            className="space-y-3 pt-1"
-                          >
-                            <span className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-2">Edit Basic Profile Details</span>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">My Size Preference</label>
-                                <select 
-                                  value={preferredSize} 
-                                  onChange={(e) => {
-                                    setPreferredSize(e.target.value);
-                                    localStorage.setItem("comfort_pref_size", e.target.value);
-                                  }}
-                                  className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                            <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-sm space-y-4 text-left">
+                              <div className="flex justify-between items-center pb-2 border-b border-neutral-50">
+                                <h4 className="font-display font-black text-sm text-neutral-900 uppercase tracking-wider">Personal Information</h4>
+                                <button 
+                                  onClick={() => setProfileSubView("main")}
+                                  className="text-[10px] text-neutral-400 hover:text-black font-extrabold"
                                 >
-                                  <option value="">Select Size</option>
-                                  {["5", "6", "7", "8", "9", "10", "11", "12"].map(s => (
-                                    <option key={s} value={s}>US {s}</option>
-                                  ))}
-                                </select>
+                                  Back
+                                </button>
                               </div>
 
-                              <div>
-                                <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Full Name</label>
-                                <input 
-                                  type="text" 
-                                  required
-                                  value={profileName}
-                                  onChange={(e) => setProfileName(e.target.value)}
-                                  placeholder="Full name"
-                                  className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                />
-                              </div>
-                            </div>
+                              <form onSubmit={handleSaveBasicProfile} className="space-y-4">
+                                <div className="space-y-1">
+                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Full Name</label>
+                                  <input 
+                                    type="text" 
+                                    required
+                                    value={profileName}
+                                    onChange={(e) => setProfileName(e.target.value)}
+                                    placeholder="Full name"
+                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black"
+                                  />
+                                </div>
 
-                            <div>
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Email Address</label>
-                              <input 
-                                type="email" 
-                                required
-                                value={profileEmail}
-                                onChange={(e) => setProfileEmail(e.target.value)}
-                                className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                              />
-                            </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Email Address</label>
+                                  <input 
+                                    type="email" 
+                                    required
+                                    value={profileEmail}
+                                    onChange={(e) => setProfileEmail(e.target.value)}
+                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black"
+                                  />
+                                </div>
 
-                            <div className="flex gap-2 pt-1.5">
-                              <button 
-                                type="submit"
-                                disabled={isSavingProfile}
-                                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-55"
-                              >
-                                {isSavingProfile ? "Saving..." : "Save Basic Info"}
-                              </button>
-                              <button 
-                                type="button"
-                                onClick={() => setActiveProfileSection(null)}
-                                className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition cursor-pointer"
-                              >
-                                Cancel
-                              </button>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Preferred Footwear Size</label>
+                                  <select 
+                                    value={preferredSize} 
+                                    onChange={(e) => {
+                                      setPreferredSize(e.target.value);
+                                      localStorage.setItem("comfort_pref_size", e.target.value);
+                                    }}
+                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black cursor-pointer"
+                                  >
+                                    <option value="">Select Size</option>
+                                    {["5", "6", "7", "8", "9", "10", "11", "12"].map(s => (
+                                      <option key={s} value={s}>US {s}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div className="flex gap-2 pt-2">
+                                  <button 
+                                    type="submit"
+                                    disabled={isSavingProfile}
+                                    className="flex-1 py-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-2xl transition cursor-pointer disabled:opacity-55"
+                                  >
+                                    {isSavingProfile ? "Saving..." : "Save Settings"}
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={() => setProfileSubView("main")}
+                                    className="px-5 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-2xl transition cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
                             </div>
-                          </motion.form>
+                          </motion.div>
                         )}
 
-                        {/* Edit Delivery Address Form */}
-                        {activeProfileSection === "address" && (
-                          <motion.form
-                            key="address-form"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            onSubmit={handleSaveProfile}
-                            className="space-y-3.5 pt-1"
+                        {/* SUBVIEW B: SHIPPING ADDRESS EDITING */}
+                        {profileSubView === "address_info" && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 15 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -15 }}
+                            className="space-y-5"
                           >
-                            <span className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-2">Edit Shipping Address Details</span>
-                            
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">First Name</label>
-                                <input 
-                                  type="text" 
-                                  required
-                                  value={addrFirstName}
-                                  onChange={(e) => setAddrFirstName(e.target.value)}
-                                  placeholder="First Name"
-                                  className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Last Name</label>
-                                <input 
-                                  type="text" 
-                                  required
-                                  value={addrLastName}
-                                  onChange={(e) => setAddrLastName(e.target.value)}
-                                  placeholder="Last Name"
-                                  className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                />
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Phone Number</label>
-                              <input 
-                                type="tel" 
-                                required
-                                value={addrPhone}
-                                onChange={(e) => setAddrPhone(e.target.value)}
-                                placeholder="Contact Phone Number"
-                                className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                              />
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-3.5">
-                              <div>
-                                <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Flat / House Number</label>
-                                <input 
-                                  type="text"
-                                  required
-                                  value={addrFlatHouse}
-                                  onChange={(e) => setAddrFlatHouse(e.target.value)}
-                                  placeholder="e.g. Flat 402, Sunshine Residency"
-                                  className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                />
+                            <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-sm space-y-4 text-left">
+                              <div className="flex justify-between items-center pb-2 border-b border-neutral-50">
+                                <h4 className="font-display font-black text-sm text-neutral-900 uppercase tracking-wider">Shipping Address</h4>
+                                <button 
+                                  onClick={() => setProfileSubView("main")}
+                                  className="text-[10px] text-neutral-400 hover:text-black font-extrabold"
+                                >
+                                  Back
+                                </button>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Area / Locality</label>
+                              <form onSubmit={handleSaveAddressProfile} className="space-y-3.5">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">First Name</label>
+                                    <input 
+                                      type="text" 
+                                      required
+                                      value={addrFirstName}
+                                      onChange={(e) => setAddrFirstName(e.target.value)}
+                                      placeholder="First name"
+                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Last Name</label>
+                                    <input 
+                                      type="text" 
+                                      required
+                                      value={addrLastName}
+                                      onChange={(e) => setAddrLastName(e.target.value)}
+                                      placeholder="Last name"
+                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Phone Number</label>
+                                  <input 
+                                    type="tel" 
+                                    required
+                                    value={addrPhone}
+                                    onChange={(e) => setAddrPhone(e.target.value)}
+                                    placeholder="Contact phone number"
+                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-black"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Flat / House Number</label>
                                   <input 
                                     type="text"
                                     required
-                                    value={addrArea}
-                                    onChange={(e) => setAddrArea(e.target.value)}
-                                    placeholder="e.g. Bandra West"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    value={addrFlatHouse}
+                                    onChange={(e) => setAddrFlatHouse(e.target.value)}
+                                    placeholder="e.g. Apartment 12B, Luxury Plaza"
+                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-black"
                                   />
                                 </div>
-                                <div>
-                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">Landmark</label>
-                                  <input 
-                                    type="text"
-                                    value={addrLandmark}
-                                    onChange={(e) => setAddrLandmark(e.target.value)}
-                                    placeholder="e.g. Near Lilavati Hospital"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                  />
-                                </div>
-                              </div>
 
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">City</label>
-                                  <input 
-                                    type="text"
-                                    required
-                                    value={addrCity}
-                                    onChange={(e) => setAddrCity(e.target.value)}
-                                    placeholder="e.g. Mumbai"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                  />
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Area / Locality</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      value={addrArea}
+                                      onChange={(e) => setAddrArea(e.target.value)}
+                                      placeholder="e.g. Soho"
+                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Landmark</label>
+                                    <input 
+                                      type="text"
+                                      value={addrLandmark}
+                                      onChange={(e) => setAddrLandmark(e.target.value)}
+                                      placeholder="e.g. Near Central Park"
+                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    />
+                                  </div>
                                 </div>
-                                <div>
-                                  <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block mb-1">PIN Code</label>
-                                  <input 
-                                    type="text"
-                                    required
-                                    value={addrPinCode}
-                                    onChange={(e) => setAddrPinCode(e.target.value)}
-                                    placeholder="e.g. 400050"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
-                                  />
-                                </div>
-                              </div>
-                            </div>
 
-                            <div className="flex gap-2 pt-1.5">
-                              <button 
-                                type="submit"
-                                disabled={isSavingProfile}
-                                className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-55"
-                              >
-                                {isSavingProfile ? "Saving..." : "Save Delivery Address"}
-                              </button>
-                              <button 
-                                type="button"
-                                onClick={() => setActiveProfileSection(null)}
-                                className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-xl transition cursor-pointer"
-                              >
-                                Cancel
-                              </button>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">City</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      value={addrCity}
+                                      onChange={(e) => setAddrCity(e.target.value)}
+                                      placeholder="e.g. New York"
+                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">PIN Code / ZIP</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      value={addrPinCode}
+                                      onChange={(e) => setAddrPinCode(e.target.value)}
+                                      placeholder="e.g. 10012"
+                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="flex gap-2 pt-2">
+                                  <button 
+                                    type="submit"
+                                    disabled={isSavingProfile}
+                                    className="flex-1 py-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-2xl transition cursor-pointer disabled:opacity-55"
+                                  >
+                                    {isSavingProfile ? "Saving..." : "Save Address"}
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={() => setProfileSubView("main")}
+                                    className="px-5 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-2xl transition cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
                             </div>
-                          </motion.form>
+                          </motion.div>
                         )}
-                      </AnimatePresence>
 
-                      {profileSaveSuccess && (
-                        <div className="text-center text-[10px] text-emerald-600 font-bold flex items-center justify-center gap-1 animate-pulse">
-                          ✓ Saved successfully to Comfort Steps!
-                        </div>
-                      )}
-                    </div>
+                        {/* SUBVIEW C: MAIN PROFILE DASHBOARD SYSTEM */}
+                        {(profileSubView === "main" || !profileSubView) && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-5 text-left"
+                          >
+                            {/* Profile Submenus */}
+                            <div className="bg-white rounded-[28px] border border-neutral-100 overflow-hidden divide-y divide-neutral-50 shadow-xs">
+                              
+                              <button
+                                onClick={() => setProfileSubView("personal_info")}
+                                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition text-left cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                                    <User size={16} />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-bold text-neutral-950">Personal Details</h4>
+                                    <p className="text-[10px] text-neutral-400 mt-0.5">
+                                      {profileName ? profileName : "Not set"} {preferredSize ? `• US ${preferredSize}` : ""}
+                                    </p>
+                                  </div>
+                                </div>
+                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                </svg>
+                              </button>
 
-                    {/* Account Security & Action (Logout) */}
-                    <div className="bg-white rounded-3xl p-5 border border-neutral-100 shadow-xs flex justify-between items-center">
-                      <div className="space-y-0.5">
-                        <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-widest block">Account Security</span>
-                        <span className="text-xs font-bold text-neutral-700">Currently logged in</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (firebaseActive) {
-                            logoutUser();
-                          }
-                          setCurrentUser(null);
-                          // Reset state
-                          setProfileName("");
-                          setProfileEmail("");
-                          setProfilePic("");
-                          localStorage.removeItem("comfort_profile_pic");
-                          alert("Successfully logged out from Comfort Steps!");
-                        }}
-                        className="text-[10px] bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 font-extrabold px-3 py-2 rounded-xl transition cursor-pointer"
-                      >
-                        Logout Account
-                      </button>
-                    </div>
-                  </>
+                              <button
+                                onClick={() => setProfileSubView("address_info")}
+                                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition text-left cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                                    <MapPin size={16} />
+                                  </div>
+                                  <div className="max-w-[70%]">
+                                    <h4 className="text-xs font-bold text-neutral-950">Shipping Address</h4>
+                                    <p className="text-[10px] text-neutral-400 mt-0.5 truncate">
+                                      {profileAddress ? profileAddress : "No address specified"}
+                                    </p>
+                                  </div>
+                                </div>
+                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                </svg>
+                              </button>
+
+                              <button
+                                onClick={() => { setScreen("my_orders"); setSelectedProduct(null); }}
+                                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition text-left cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                                    <Package size={16} />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-bold text-neutral-950">My Orders</h4>
+                                    <p className="text-[10px] text-neutral-400 mt-0.5">
+                                      View status of your {myOrders.length} order{myOrders.length !== 1 ? "s" : ""}
+                                    </p>
+                                  </div>
+                                </div>
+                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                </svg>
+                              </button>
+                            </div>
+
+                            {/* LIVE ORDER HISTORY LISTING IN COMPACT */}
+                            <div className="space-y-2.5">
+                              <h4 className="text-[9px] uppercase font-extrabold tracking-widest text-neutral-400">
+                                Recent Orders ({myOrders.length})
+                              </h4>
+
+                              {myOrders.length === 0 ? (
+                                <div className="bg-white rounded-2xl p-6 border border-neutral-100 text-center space-y-2">
+                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
+                                    <History size={14} />
+                                  </div>
+                                  <h5 className="font-bold text-xs text-neutral-800">No past purchases</h5>
+                                  <p className="text-[10px] text-[#8E8E8A] leading-relaxed max-w-[240px] mx-auto">
+                                    Place an order to test the history logs!
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {myOrders.slice(0, 3).map((ord) => (
+                                    <div key={ord.id} className="bg-white border border-neutral-100 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
+                                      <div className="flex justify-between items-center text-[10px]">
+                                        <span className="font-extrabold text-neutral-800">{ord.id}</span>
+                                        <span className="bg-neutral-900 text-white px-2 py-0.5 rounded-full font-bold">
+                                          ● {ord.status}
+                                        </span>
+                                      </div>
+
+                                      <div className="space-y-1 text-left">
+                                        {ord.items.map((item, idx) => (
+                                          <div key={idx} className="flex justify-between items-center text-[11px] text-neutral-600">
+                                            <span className="truncate max-w-[70%] font-medium">
+                                              {item.product.name} ({item.selectedSize})
+                                            </span>
+                                            <span>Qty {item.quantity}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+
+                                      <div className="border-t border-neutral-50 pt-2 flex justify-between items-center text-xs">
+                                        <span className="text-[10px] text-neutral-400">
+                                          {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        </span>
+                                        <span className="font-extrabold text-neutral-900">₹{ord.totalAmount}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Account Security & Action (Logout) */}
+                            <div className="bg-white rounded-[28px] p-5 border border-neutral-100 shadow-xs flex justify-between items-center">
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-widest block font-sans">Account Security</span>
+                                <span className="text-xs font-bold text-neutral-700">Logged in via Google Secure</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (firebaseActive) {
+                                    logoutUser();
+                                  }
+                                  setCurrentUser(null);
+                                  // Reset state
+                                  setProfileName("");
+                                  setProfileEmail("");
+                                  setProfilePic("");
+                                  localStorage.removeItem("comfort_profile_pic");
+                                }}
+                                className="text-[10px] bg-neutral-900 hover:bg-black text-white font-extrabold px-3 py-2 rounded-xl transition cursor-pointer"
+                              >
+                                Logout Account
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </>
                 )}
               </div>
             )}
@@ -3209,8 +3408,188 @@ Total Paid:     ₹${ord.totalAmount}
               </div>
               <h3 className="font-display font-black text-base text-neutral-900">Refunds & Returns</h3>
               <p className="text-xs text-neutral-600 leading-relaxed font-medium whitespace-pre-wrap">
-                {settings.refundPolicyText || settings.termsConditionsText || "If you are not fully satisfied with your purchase, you can return or exchange the items within 30 days of delivery. The products must be unworn and in their original packaging."}
+                {settings.refundPolicyText || "If you are not fully satisfied with your purchase, you can return or exchange the items within 30 days of delivery. The products must be unworn and in their original packaging."}
               </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* VIEW 9: TERMS & CONDITIONS */}
+        {screen === "terms_and_conditions" && (
+          <motion.div
+            key="terms_and_conditions"
+            initial={{ opacity: 0, x: 15 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -15 }}
+            className="max-w-md mx-auto px-4 py-6 pb-28 space-y-6"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={() => setScreen("dashboard")}
+                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">Terms of Service</h2>
+              <div className="w-10 h-10" />
+            </div>
+
+            {/* Content card */}
+            <div className="bg-white border border-neutral-100 rounded-[28px] p-6 shadow-sm space-y-4 text-left">
+              <div className="w-12 h-12 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                </svg>
+              </div>
+              <h3 className="font-display font-black text-base text-neutral-900">Terms & Conditions</h3>
+              <p className="text-xs text-neutral-600 leading-relaxed font-medium whitespace-pre-wrap font-sans">
+                {settings.termsConditionsText || "By using our website, you agree to our terms of service. All orders are subject to availability and acceptance."}
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* VIEW 10: CONTACT US */}
+        {screen === "contact_us" && (
+          <motion.div
+            key="contact_us"
+            initial={{ opacity: 0, x: 15 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -15 }}
+            className="max-w-md mx-auto px-4 py-6 pb-28 space-y-6"
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={() => setScreen("dashboard")}
+                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">Contact Us</h2>
+              <div className="w-10 h-10" />
+            </div>
+
+            {/* Content card */}
+            <div className="bg-white border border-neutral-100 rounded-[28px] p-6 shadow-sm space-y-5 text-left">
+              <div className="w-12 h-12 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
+                <Mail size={24} />
+              </div>
+              <div>
+                <h3 className="font-display font-black text-base text-neutral-900">Get in Touch</h3>
+                <p className="text-xs text-neutral-400 mt-1">We'd love to hear from you. We respond within 24 hours.</p>
+              </div>
+
+              {isMessageSent ? (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center space-y-2"
+                >
+                  <div className="w-9 h-9 bg-emerald-500 rounded-full flex items-center justify-center text-white mx-auto text-sm font-bold">✓</div>
+                  <h4 className="text-xs font-black text-emerald-900">Message Sent Successfully</h4>
+                  <p className="text-[10px] text-emerald-700 leading-relaxed">
+                    Thank you for contacting Comfort Steps. Our customer experience specialists will get back to you shortly.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setIsMessageSent(false);
+                      setContactMessage("");
+                    }}
+                    className="mt-2 text-[10px] font-extrabold text-emerald-800 hover:underline"
+                  >
+                    Send another message
+                  </button>
+                </motion.div>
+              ) : (
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setIsSendingMessage(true);
+                    setTimeout(() => {
+                      setIsSendingMessage(false);
+                      setIsMessageSent(true);
+                    }, 1000);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Full Name</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={contactName || profileName}
+                      onChange={(e) => setContactName(e.target.value)}
+                      placeholder="e.g. Jane Doe"
+                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Email Address</label>
+                    <input 
+                      type="email" 
+                      required
+                      value={contactEmail || profileEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      placeholder="e.g. jane@example.com"
+                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Your Message</label>
+                    <textarea 
+                      required
+                      rows={4}
+                      value={contactMessage}
+                      onChange={(e) => setContactMessage(e.target.value)}
+                      placeholder="How can we help you with your Comfort Steps purchase?"
+                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black resize-none"
+                    />
+                  </div>
+
+                  <button 
+                    type="submit"
+                    disabled={isSendingMessage}
+                    className="w-full py-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-2xl transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-55"
+                  >
+                    {isSendingMessage ? "Sending message..." : "Send Message"}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            {/* Official Coordinates Card */}
+            <div className="bg-neutral-900 text-neutral-100 rounded-[28px] p-6 text-left space-y-4 shadow-xl">
+              <span className="text-[9px] uppercase tracking-widest text-neutral-400 font-extrabold block">Luxury Office Coordinates</span>
+              
+              <div className="space-y-3.5">
+                <div className="flex gap-3 items-start">
+                  <MapPin size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Milan Headquarters</h4>
+                    <p className="text-[10px] text-neutral-400 mt-0.5 leading-relaxed">Comfort Steps SpA, Via della Spiga 12, 20121 Milano, Italy</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <Phone size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Consierge Line</h4>
+                    <p className="text-[10px] text-neutral-400 mt-0.5 leading-relaxed">+1 (800) COMFORT-S (266-3678)</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <Mail size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Direct Email</h4>
+                    <p className="text-[10px] text-neutral-400 mt-0.5 leading-relaxed">concierge@comfortsteps.com</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
