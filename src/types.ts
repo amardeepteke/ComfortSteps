@@ -37,6 +37,8 @@ export interface Product {
   isFeatured?: boolean;
   createdAt: string;
   variants?: ProductVariant[];
+  stockQuantity?: number;
+  stock?: number;
 }
 
 export interface CartItem {

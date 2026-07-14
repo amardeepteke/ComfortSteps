@@ -137,6 +137,7 @@ export default function App() {
         orders={orders}
         onAddOrder={handleAddOrder}
         onUpdateOrder={handleUpdateOrder}
+        onUpdateProducts={setProducts}
       />
     </div>
   );
