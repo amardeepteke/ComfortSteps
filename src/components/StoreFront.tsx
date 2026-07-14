@@ -26,9 +26,16 @@ import {
   AlertCircle,
   Database,
   Sliders,
-  Filter
+  Filter,
+  ChevronRight,
+  Cloud,
+  Gem,
+  Truck,
+  RotateCcw,
+  Headphones,
+  Sparkles
 } from "lucide-react";
-import { Product, CartItem, Order, UserProfile } from "../types";
+import { Product, CartItem, Order, UserProfile, BannerSlide } from "../types";
 import { loginWithGoogle, logoutUser, auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, addDoc, doc, setDoc, updateDoc, onSnapshot, query, where } from "firebase/firestore";
@@ -72,6 +79,19 @@ const isStockPhoto = (url: string): boolean => {
 };
 
 export default function StoreFront({ products, orders = [], onAddOrder, onUpdateOrder }: StoreFrontProps) {
+  // Screen size detection state
+  const [windowWidth, setWindowWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+  const isDesktop = windowWidth >= 1024;
+
   // Main view state: onboarding, dashboard, detail, cart, register, my_orders, privacy_policy, refund_policy, terms_and_conditions, contact_us
   const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register" | "my_orders" | "privacy_policy" | "refund_policy" | "terms_and_conditions" | "contact_us">("onboarding");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -108,7 +128,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   const [addrCity, setAddrCity] = useState<string>(() => localStorage.getItem("comfort_addr_city") || "");
   const [addrPinCode, setAddrPinCode] = useState<string>(() => localStorage.getItem("comfort_addr_pin_code") || "");
   const [activeProfileSection, setActiveProfileSection] = useState<"profile" | "address" | null>(null);
-  const [profileSubView, setProfileSubView] = useState<"main" | "personal_info" | "address_info" | null>(null);
+  const [profileSubView, setProfileSubView] = useState<"main" | "personal_info" | "address_info" | "merchant_settings" | null>(null);
 
   // Contact Us state variables
   const [contactName, setContactName] = useState("");
@@ -183,6 +203,55 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     imageUrl: "https://images.unsplash.com/photo-1515347619252-60a4bd4effd8?auto=format&fit=crop&w=1600&q=80",
     bgGradient: "from-[#9B86EC] via-[#856EE3] to-[#6E54D7]"
   });
+
+  const DEFAULT_BANNER_SLIDES: BannerSlide[] = [
+    {
+      id: "premium-elegance",
+      tagline: "PREMIUM WOMEN'S FOOTWEAR",
+      scriptText: "Step Into",
+      title: "COMFORT & ELEGANCE",
+      subtext: "Premium Footwear Crafted for Every Step You Take",
+      ctaText: "SHOP NOW",
+      imageUrl: "https://lh3.googleusercontent.com/d/1pBh6vEJCwByC2_DD0c9rE42MDbwrd8u5", 
+      badgeText: "NEW COLLECTION 2026",
+      bgGradient: "linear-gradient(to bottom right, #FCFAF5, #F4EEE8, #ECE4DB)"
+    },
+    {
+      id: "luxury-wedges",
+      tagline: "COUTURE COLLECTION",
+      scriptText: "Walk In",
+      title: "LUXURY & STYLE",
+      subtext: "Elevate your style with handcrafted lightweight wedge sandals",
+      ctaText: "EXPLORE COLLECTION",
+      imageUrl: "https://lh3.googleusercontent.com/d/1yhXKS2ODpODTdlfTmQhgjdmFnkyPIU9w", 
+      badgeText: "TRENDING NOW",
+      bgGradient: "linear-gradient(to bottom right, #FAF8F5, #F1ECE3, #E8DEC6)"
+    },
+    {
+      id: "all-day-comfort",
+      tagline: "DAILY COMFORT ESSENTIALS",
+      scriptText: "Feel The",
+      title: "CLOUD COMFORT",
+      subtext: "Ergonomic designs and extra cushion footbeds for active days",
+      ctaText: "VIEW DAILY WEAR",
+      imageUrl: "https://lh3.googleusercontent.com/d/1As3HJoUjLOTUJ3OffwCc-0_xTI9sCh4J", 
+      badgeText: "BEST SELLER 2026",
+      bgGradient: "linear-gradient(to bottom right, #F9F8F6, #F2EDE9, #EBE3DC)"
+    }
+  ];
+
+  const [bannerSlides, setBannerSlides] = useState<BannerSlide[]>(() => {
+    const saved = localStorage.getItem("comfort_banner_slides");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return DEFAULT_BANNER_SLIDES;
+  });
+
+  const [activeSlideIdx, setActiveSlideIdx] = useState(0);
 
   const saveAdminUpiId = async (newUpi: string) => {
     setAdminUpiId(newUpi);
@@ -297,15 +366,59 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
       console.error("Firestore settings sync error:", error);
     });
 
+    // 5. Subscribe to Banner Slides Carousel Config
+    const bannerSliderDocRef = doc(db, "config", "banner_slider");
+    const unsubBannerSlider = onSnapshot(bannerSliderDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && Array.isArray(data.slides)) {
+          setBannerSlides(data.slides);
+          localStorage.setItem("comfort_banner_slides", JSON.stringify(data.slides));
+        }
+      } else {
+        // Seed initial default slides
+        setDoc(bannerSliderDocRef, { slides: DEFAULT_BANNER_SLIDES })
+          .then(() => {
+            localStorage.setItem("comfort_banner_slides", JSON.stringify(DEFAULT_BANNER_SLIDES));
+          })
+          .catch(err => console.log("Failed to seed banner slides config:", err));
+      }
+    }, (error) => {
+      console.error("Firestore banner slides sync error:", error);
+    });
+
     return () => {
       unsubOnboarding();
       unsubMerchant();
       unsubBanner();
       unsubSettings();
+      unsubBannerSlider();
     };
   }, [db]);
 
+  // Slide Carousel Auto-Rotation Hook (7s interval)
+  useEffect(() => {
+    if (bannerSlides.length <= 1) return;
+    const slideTimer = setInterval(() => {
+      setActiveSlideIdx((prev) => (prev + 1) % bannerSlides.length);
+    }, 7000);
+    return () => clearInterval(slideTimer);
+  }, [bannerSlides.length]);
+
   const [isAdminMode, setIsAdminMode] = useState(false);
+  
+  // Slide Carousel Editing fields
+  const [editingSlideIdx, setEditingSlideIdx] = useState<number | null>(null);
+  const [slideTagline, setSlideTagline] = useState("");
+  const [slideScriptText, setSlideScriptText] = useState("");
+  const [slideTitle, setSlideTitle] = useState("");
+  const [slideSubtext, setSlideSubtext] = useState("");
+  const [slideCtaText, setSlideCtaText] = useState("");
+  const [slideImageUrl, setSlideImageUrl] = useState("");
+  const [slideBadgeText, setSlideBadgeText] = useState("");
+  const [slideBgGradient, setSlideBgGradient] = useState("");
+  const [isSavingSlides, setIsSavingSlides] = useState(false);
+  const [slidesSaveSuccess, setSlidesSaveSuccess] = useState(false);
   const [isEditingProduct, setIsEditingProduct] = useState<Product | null>(null);
   
   // Product editor fields
@@ -594,6 +707,30 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
       setProfileSubView("main");
       setActiveProfileSection(null);
     }, 800);
+  };
+
+  // Save banner slides to Firestore
+  const handleSaveBannerSlides = async (updatedSlides: BannerSlide[]) => {
+    setIsSavingSlides(true);
+    setSlidesSaveSuccess(false);
+    if (db) {
+      try {
+        const sliderDocRef = doc(db, "config", "banner_slider");
+        await setDoc(sliderDocRef, { slides: updatedSlides });
+        setBannerSlides(updatedSlides);
+        localStorage.setItem("comfort_banner_slides", JSON.stringify(updatedSlides));
+        setSlidesSaveSuccess(true);
+        setTimeout(() => setSlidesSaveSuccess(false), 3000);
+      } catch (err) {
+        console.error("Failed to save banner slides to Firestore:", err);
+      }
+    } else {
+      setBannerSlides(updatedSlides);
+      localStorage.setItem("comfort_banner_slides", JSON.stringify(updatedSlides));
+      setSlidesSaveSuccess(true);
+      setTimeout(() => setSlidesSaveSuccess(false), 3000);
+    }
+    setIsSavingSlides(false);
   };
 
   // Save profile settings
@@ -995,8 +1132,159 @@ Total Paid:     ₹${ord.totalAmount}
   });
 
   return (
-    <div id="storefront-root" className="min-h-screen bg-[#FBFBFA] text-neutral-900 font-sans selection:bg-neutral-900 selection:text-white pb-32">
+    <div id="storefront-root" className={`min-h-screen bg-[#FBFBFA] text-neutral-900 font-sans selection:bg-neutral-900 selection:text-white ${isDesktop ? "pb-12" : "pb-32"}`}>
       
+      {/* PREMIUM DESKTOP & TABLET HEADER */}
+      {screen !== "onboarding" && !isMobile && (
+        <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-neutral-100 shadow-xs">
+          <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-6">
+            
+            {/* Logo */}
+            <div className="flex items-center gap-10">
+              <button 
+                onClick={() => {
+                  setScreen("dashboard");
+                  setActiveTab("home");
+                  setSelectedProduct(null);
+                }}
+                className="cursor-pointer"
+              >
+                <ComfortStepsLogo size="sm" />
+              </button>
+
+              {/* Navigation Categories/Tabs */}
+              <nav className="flex items-center gap-6">
+                {[
+                  { id: "home", label: "Home" },
+                  { id: "store", label: "Store" },
+                  { id: "wishlist", label: "Wishlist" },
+                  { id: "orders", label: "Orders" },
+                  { id: "profile", label: "Profile" }
+                ].map((tab) => {
+                  const isActive = (tab.id === "orders" && screen === "my_orders") || (tab.id !== "orders" && screen === "dashboard" && activeTab === tab.id && !selectedProduct);
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        if (tab.id === "orders") {
+                          setScreen("my_orders");
+                          setSelectedProduct(null);
+                        } else {
+                          setScreen("dashboard");
+                          setActiveTab(tab.id);
+                          setSelectedProduct(null);
+                        }
+                      }}
+                      className={`text-xs uppercase font-extrabold tracking-widest relative py-2 cursor-pointer transition ${
+                        isActive ? "text-neutral-900" : "text-neutral-400 hover:text-black"
+                      }`}
+                    >
+                      {tab.label}
+                      {isActive && (
+                        <motion.div 
+                          layoutId="desktopNavUnderline" 
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-black"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Search input inside header */}
+            <div className="flex-1 max-w-md relative hidden md:block">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" size={15} />
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setScreen("dashboard");
+                  setActiveTab("store");
+                  setSelectedProduct(null);
+                }}
+                placeholder="Search premium comfort footwear..."
+                className="w-full bg-neutral-50 border border-neutral-100 rounded-xl py-2 pl-9 pr-4 text-xs focus:outline-none focus:border-black transition"
+              />
+            </div>
+
+            {/* Actions: Wishlist, Cart, Profile */}
+            <div className="flex items-center gap-4.5">
+              {/* Wishlist Button */}
+              <button 
+                onClick={() => {
+                  setScreen("dashboard");
+                  setActiveTab("wishlist");
+                  setSelectedProduct(null);
+                }}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition relative cursor-pointer ${
+                  screen === "dashboard" && activeTab === "wishlist"
+                    ? "bg-black border-black text-white"
+                    : "bg-white border-neutral-150 text-neutral-700 hover:bg-neutral-50"
+                }`}
+                title="Saved Items"
+              >
+                <Heart size={16} fill={favorites.length > 0 ? (screen === "dashboard" && activeTab === "wishlist" ? "#ffffff" : "#ef4444") : "none"} className={favorites.length > 0 && activeTab !== "wishlist" ? "text-rose-500" : ""} />
+                {favorites.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-[#E2583E] text-white text-[8.5px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white animate-pulse">
+                    {favorites.length}
+                  </span>
+                )}
+              </button>
+
+              {/* Shopping Cart Button */}
+              <button 
+                onClick={() => {
+                  setScreen("cart");
+                  setSelectedProduct(null);
+                }}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition relative cursor-pointer ${
+                  screen === "cart"
+                    ? "bg-black border-black text-white"
+                    : "bg-white border-neutral-150 text-neutral-700 hover:bg-neutral-50"
+                }`}
+                title="My Cart"
+              >
+                <ShoppingBag size={16} />
+                {cart.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-neutral-900 text-white text-[8.5px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">
+                    {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                  </span>
+                )}
+              </button>
+
+              {/* Divider */}
+              <div className="h-6 w-px bg-neutral-200" />
+
+              {/* Profile Card Summary */}
+              <button
+                onClick={() => {
+                  setScreen("dashboard");
+                  setActiveTab("profile");
+                  setSelectedProduct(null);
+                }}
+                className="flex items-center gap-2.5 text-left pl-1.5 cursor-pointer group"
+              >
+                <img 
+                  src={profilePic} 
+                  alt="" 
+                  className="w-8 h-8 rounded-full border border-neutral-150 object-cover" 
+                  referrerPolicy="no-referrer"
+                />
+                <div className="hidden lg:block">
+                  <p className="text-[10px] uppercase font-extrabold text-neutral-400 tracking-wider leading-none font-sans">Account</p>
+                  <p className="text-xs font-black text-neutral-800 group-hover:text-black leading-tight mt-0.5 max-w-[100px] truncate">
+                    {currentUser ? (profileName || "Buyer") : "Sign In"}
+                  </p>
+                </div>
+              </button>
+            </div>
+
+          </div>
+        </header>
+      )}
+
       {/* Flying sneakers animation */}
       <AnimatePresence>
         {flyingItems.map(item => (
@@ -1171,10 +1459,10 @@ Total Paid:     ₹${ord.totalAmount}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="max-w-md mx-auto px-4 py-6"
+            className="max-w-md md:max-w-3xl lg:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-6 lg:py-12"
           >
             {/* Header: Three-dot Menu, Name, Bell and Cart */}
-            <div id="dashboard-header" className="flex justify-between items-center mb-6 relative">
+            <div id="dashboard-header" className="flex lg:hidden justify-between items-center mb-6 relative">
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <button 
@@ -1425,7 +1713,7 @@ Total Paid:     ₹${ord.totalAmount}
                 {activeTab === "home" && (
                   <div className="space-y-6">
                     {/* Search bar matching Image 3 */}
-                    <div className="relative">
+                    <div className="relative md:hidden">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" size={16} />
                       <input 
                         type="text" 
@@ -1440,56 +1728,297 @@ Total Paid:     ₹${ord.totalAmount}
                       <SlidersHorizontal className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 cursor-pointer hover:text-black transition" size={16} onClick={() => { setActiveTab("store"); }} />
                     </div>
 
-                    {/* Sale Promotion Banner (Dynamic from Firestore/State matching the screenshot) */}
-                    <div 
-                      className={`relative rounded-[28px] p-6 md:p-8 overflow-hidden text-white shadow-xs flex flex-col justify-center min-h-[180px] md:min-h-[200px] w-full ${
-                        bannerConfig.imageUrl && !bannerConfig.imageUrl.includes("photo-1515347619252-60a4bd4effd8") && bannerConfig.imageUrl.trim() !== ""
-                          ? "" 
-                          : `bg-gradient-to-br ${bannerConfig.bgGradient || "from-[#9B86EC] via-[#856EE3] to-[#6E54D7]"}`
-                      }`}
-                      style={
-                        bannerConfig.imageUrl && !bannerConfig.imageUrl.includes("photo-1515347619252-60a4bd4effd8") && bannerConfig.imageUrl.trim() !== ""
-                          ? { backgroundImage: `url(${bannerConfig.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" } 
-                          : {}
-                      }
-                    >
-                      {/* Dark overlay for readability when there is an image background */}
-                      {bannerConfig.imageUrl && !bannerConfig.imageUrl.includes("photo-1515347619252-60a4bd4effd8") && bannerConfig.imageUrl.trim() !== "" && (
-                        <div className="absolute inset-0 bg-black/40 z-0" />
-                      )}
-                      
-                      {/* Abstract glowing background shapes when no custom image background is used */}
-                      {!(bannerConfig.imageUrl && !bannerConfig.imageUrl.includes("photo-1515347619252-60a4bd4effd8") && bannerConfig.imageUrl.trim() !== "") && (
+                    {/* PREMIUM LUXURY MULTI-BANNER SLIDER CAROUSEL */}
+                    <div className="relative w-full rounded-[32px] overflow-hidden group shadow-xs">
+                      <div className="relative min-h-[440px] md:min-h-[480px] lg:min-h-[520px] w-full flex items-center overflow-hidden">
+                        <AnimatePresence mode="wait">
+                          {bannerSlides.map((slide, sIdx) => {
+                            if (sIdx !== activeSlideIdx) return null;
+                            return (
+                              <motion.div
+                                key={slide.id || sIdx}
+                                initial={{ opacity: 0, x: 45 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -45 }}
+                                transition={{ type: "tween", ease: "easeInOut", duration: 0.45 }}
+                                className="absolute inset-0 w-full h-full grid grid-cols-1 lg:grid-cols-12 items-center text-neutral-900 overflow-hidden"
+                                style={{ background: slide.bgGradient || "linear-gradient(to bottom right, #FCFAF5, #F4EEE8, #ECE4DB)" }}
+                              >
+                                {/* Left Side: Branding, Typography, Action CTA */}
+                                <div className="lg:col-span-6 flex flex-col justify-center text-left py-10 md:py-14 pl-6 md:pl-12 lg:pl-16 pr-6 z-10 select-none">
+                                  {/* CS Monogram Logo Badge */}
+                                  <div className="flex flex-col items-start mb-4">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-10 h-10 rounded-full border border-[#D4AF37] flex items-center justify-center bg-white/60 shadow-2xs">
+                                        <span className="font-serif text-[11px] font-black tracking-normal text-[#BC9D4E]">CS</span>
+                                      </div>
+                                      <div className="flex flex-col items-start justify-center">
+                                        <h3 className="font-serif text-[12px] font-black tracking-[0.2em] text-neutral-900 leading-tight">COMFORT STEPS</h3>
+                                        <p className="text-[7.5px] text-neutral-400 font-bold uppercase tracking-widest mt-0.5">Premium Women's Footwear</p>
+                                      </div>
+                                    </div>
+                                    {/* Thin divider under branding */}
+                                    <div className="flex items-center gap-2 w-full max-w-[220px] mt-2.5">
+                                      <div className="h-[0.5px] bg-neutral-200 flex-1" />
+                                      <span className="text-[7.5px] text-[#A68F5B] font-extrabold tracking-widest uppercase">EST. 2026</span>
+                                      <div className="h-[0.5px] bg-neutral-200 flex-1" />
+                                    </div>
+                                  </div>
+
+                                  {/* Headline with handwritten script pairing */}
+                                  <div className="space-y-1.5 mt-2">
+                                    <span className="font-script text-3xl md:text-4xl lg:text-[42px] text-[#BC9D4E] block font-normal tracking-wide capitalize leading-none mb-1">
+                                      {slide.scriptText || "Step Into"}
+                                    </span>
+                                    <h2 className="font-display font-black text-2xl md:text-4xl lg:text-[46px] text-neutral-900 tracking-tight leading-[1.05] uppercase">
+                                      {slide.title || "COMFORT & ELEGANCE"}
+                                    </h2>
+                                  </div>
+
+                                  {/* Subtext description */}
+                                  <p className="text-xs md:text-sm text-neutral-500 font-medium leading-relaxed max-w-sm mt-3">
+                                    {slide.subtext || "Premium Footwear Crafted for Every Step You Take"}
+                                  </p>
+
+                                  {/* Horizontal Feature Badges */}
+                                  <div className="flex flex-wrap items-center gap-2 mt-5">
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-150/80 bg-white/65 text-neutral-800 text-[8.5px] font-extrabold tracking-wider shadow-3xs">
+                                      <Cloud size={10.5} className="text-[#BC9D4E]" />
+                                      <span>ALL DAY COMFORT</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-150/80 bg-white/65 text-neutral-800 text-[8.5px] font-extrabold tracking-wider shadow-3xs">
+                                      <Gem size={10.5} className="text-[#BC9D4E]" />
+                                      <span>PREMIUM QUALITY</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-neutral-150/80 bg-white/65 text-neutral-800 text-[8.5px] font-extrabold tracking-wider shadow-3xs">
+                                      <ShieldCheck size={10.5} className="text-[#BC9D4E]" />
+                                      <span>DURABLE & STYLISH</span>
+                                    </div>
+                                  </div>
+
+                                  {/* CTA Action Button */}
+                                  <button
+                                    onClick={() => {
+                                      setActiveTab("store");
+                                      setSelectedCategory("All");
+                                    }}
+                                    className="bg-neutral-950 hover:bg-black text-white hover:text-[#D4AF37] font-sans font-extrabold text-[11px] uppercase tracking-wider px-7 py-3.5 rounded-full transition-all shadow-md cursor-pointer inline-flex items-center gap-2 mt-7 w-fit hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                                  >
+                                    <span>{slide.ctaText || "SHOP NOW"}</span>
+                                    <ArrowRight size={13} />
+                                  </button>
+                                </div>
+
+                                {/* Right Side: Visual Devices Composition Mockup */}
+                                <div className="lg:col-span-6 relative w-full h-[300px] sm:h-[350px] md:h-[400px] lg:h-full flex items-center justify-center p-6 lg:p-10 select-none overflow-visible">
+                                  {/* Background Arch & Pedestal */}
+                                  <div className="absolute inset-x-8 bottom-6 top-10 bg-[#EDE7DD] rounded-t-[120px] border border-white/50 shadow-inner opacity-85 flex items-end justify-center pb-4 overflow-hidden z-0">
+                                    <div className="w-[88%] h-[88%] bg-[#FAF5F0] rounded-t-[100px] border border-white/30 flex items-end justify-center">
+                                      <div className="w-52 h-10 bg-[#D2C5B6]/50 blur-lg rounded-full mb-2 animate-pulse" />
+                                    </div>
+                                  </div>
+
+                                  {/* Dynamic Shoe Image Floating */}
+                                  {slide.imageUrl && (
+                                    <img
+                                      src={slide.imageUrl}
+                                      alt="Featured Shoe"
+                                      referrerPolicy="no-referrer"
+                                      className="absolute w-[45%] max-h-[55%] object-contain z-12 drop-shadow-[0_15px_15px_rgba(0,0,0,0.18)] animate-float top-[20%] left-[10%]"
+                                    />
+                                  )}
+
+                                  {/* DEVICE 1: LAPTOP MOCKUP (Representing Desktop experience) */}
+                                  <div className="absolute w-[68%] aspect-[1.6] bg-[#0A0A0A] rounded-[10px] p-[2%] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.25)] border border-neutral-800 z-10 scale-90 sm:scale-100 transition-all">
+                                    <div className="bg-[#FAF7F3] w-full h-full rounded-[4px] overflow-hidden border border-neutral-900 flex flex-col relative select-none">
+                                      {/* Bezel dot / webcam */}
+                                      <div className="absolute top-[3%] left-1/2 -translate-x-1/2 w-1 h-1 bg-neutral-800 rounded-full z-20" />
+                                      {/* Website Header inside laptop */}
+                                      <div className="bg-white px-2 py-1 flex justify-between items-center text-[4px] font-sans border-b border-neutral-100 select-none scale-90 origin-left">
+                                        <div className="flex items-center gap-0.5 font-bold">
+                                          <span className="text-[5px] text-neutral-950">CS</span>
+                                          <span className="text-[3.5px] tracking-tight">Comfort Steps</span>
+                                        </div>
+                                        <div className="flex gap-1 text-neutral-400 font-semibold">
+                                          <span>HOME</span>
+                                          <span>CATALOG</span>
+                                          <span>BEST SELLERS</span>
+                                        </div>
+                                        <div className="w-2.5 h-1 bg-neutral-100 rounded-xs" />
+                                      </div>
+                                      {/* Content inside laptop */}
+                                      <div className="p-1.5 flex-1 flex items-center relative overflow-hidden">
+                                        <div className="w-1/2 text-left space-y-0.5 z-10">
+                                          <span className="text-[3px] bg-amber-100 text-amber-800 px-0.5 rounded-full uppercase tracking-widest inline-block font-extrabold">NEW</span>
+                                          <h4 className="font-serif text-[6px] font-black text-neutral-900 uppercase tracking-tight leading-none">Elegance Redefined</h4>
+                                          <p className="text-[2.5px] text-neutral-400 font-medium leading-relaxed max-w-[50px]">The perfect blend of premium comfort & daily style.</p>
+                                          <div className="text-[2.5px] bg-neutral-950 text-white px-1 py-0.5 rounded-xs w-fit font-bold cursor-pointer">Shop Now</div>
+                                        </div>
+                                        {/* Shoe display within laptop screen */}
+                                        <div className="absolute right-1 bottom-1 top-2 w-1/2 bg-[#ECE5DB]/60 rounded-t-full border border-white/40 flex items-center justify-center p-0.5">
+                                          <img
+                                            src={slide.imageUrl || "https://lh3.googleusercontent.com/d/1pBh6vEJCwByC2_DD0c9rE42MDbwrd8u5"}
+                                            alt="Showcase"
+                                            referrerPolicy="no-referrer"
+                                            className="w-full h-full object-contain drop-shadow-sm select-none"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {/* Laptop Base Stand */}
+                                    <div className="absolute -bottom-1 left-[10%] right-[10%] h-1 bg-neutral-300 rounded-b-xs shadow-xs z-15" />
+                                  </div>
+
+                                  {/* DEVICE 2: TABLET MOCKUP (Partially overlapping right) */}
+                                  <div className="absolute right-2 sm:right-5 top-[22%] w-[32%] aspect-[0.72] bg-[#0E0E0E] rounded-md p-[1%] shadow-lg border border-neutral-800 z-15 hidden sm:block">
+                                    <div className="bg-white w-full h-full rounded-sm overflow-hidden flex flex-col relative select-none">
+                                      <div className="bg-neutral-50 px-1 py-0.5 border-b border-neutral-100 flex justify-between items-center text-[3px] font-bold">
+                                        <span>Comfort Steps</span>
+                                        <div className="w-1.5 h-1.5 bg-neutral-200 rounded-full" />
+                                      </div>
+                                      <div className="p-1 flex flex-col justify-between h-full relative">
+                                        <div className="text-left leading-tight">
+                                          <span className="text-[2.5px] text-neutral-400 block tracking-wider uppercase font-bold">COUTURE</span>
+                                          <h5 className="text-[4px] font-extrabold text-neutral-900 tracking-tighter">WALK IN STYLE</h5>
+                                        </div>
+                                        <img
+                                          src={slide.imageUrl || "https://lh3.googleusercontent.com/d/1yhXKS2ODpODTdlfTmQhgjdmFnkyPIU9w"}
+                                          alt="Tablet Shoe"
+                                          referrerPolicy="no-referrer"
+                                          className="w-[85%] h-1/2 object-contain mx-auto drop-shadow-sm select-none"
+                                        />
+                                        <div className="bg-neutral-900 text-white text-[2.5px] font-black text-center py-0.5 rounded-full uppercase tracking-wider cursor-pointer mt-1">Explore</div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* DEVICE 3: MOBILE SMARTPHONE MOCKUP (Overlapping center front) */}
+                                  <div className="absolute right-5 sm:right-14 bottom-4 w-[25%] aspect-[0.5] bg-[#080808] rounded-[16px] p-[1.5%] shadow-2xl border border-neutral-900 z-20 hover:scale-105 transition-all">
+                                    <div className="bg-white w-full h-full rounded-[13px] overflow-hidden flex flex-col relative select-none">
+                                      {/* Top phone speaker notch */}
+                                      <div className="absolute top-[2%] left-1/2 -translate-x-1/2 w-4 h-0.5 bg-neutral-800 rounded-full z-20" />
+                                      <div className="p-1.5 pt-3 h-full flex flex-col justify-between">
+                                        <div className="text-left space-y-0.5">
+                                          <span className="text-[2px] bg-red-50 text-red-700 px-0.5 rounded-xs font-bold uppercase inline-block">HOT</span>
+                                          <h6 className="text-[3.5px] font-black text-neutral-900 tracking-tighter uppercase leading-none">LIVE IN COMFORT</h6>
+                                        </div>
+                                        <img
+                                          src={slide.imageUrl || "https://lh3.googleusercontent.com/d/1As3HJoUjLOTUJ3OffwCc-0_xTI9sCh4J"}
+                                          alt="Mobile Shoe"
+                                          referrerPolicy="no-referrer"
+                                          className="w-[90%] h-1/2 object-contain mx-auto drop-shadow-xs select-none"
+                                        />
+                                        <div className="text-[2px] font-bold text-center text-[#BC9D4E] underline uppercase tracking-widest cursor-pointer leading-relaxed">Shop Heels</div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* GOLD EMBOSSED CIRCLE STAMP SEAL */}
+                                  <div className="absolute top-[8%] right-2 md:right-[5%] w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-[#E2D1B3] via-[#BC9D4E] to-[#927835] rounded-full border border-white/50 shadow-lg flex flex-col items-center justify-center text-center text-white z-25 animate-float select-none font-sans">
+                                    <div className="absolute inset-1 border border-dashed border-white/20 rounded-full" />
+                                    {/* Tiny Crown Vector */}
+                                    <svg className="w-3.5 h-3.5 text-white/90 mb-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M2 4l3 7 7-9 7 9 3-7-1 16H3L2 4z" />
+                                    </svg>
+                                    <span className="text-[5.5px] uppercase font-black tracking-widest text-amber-50">NEW COLLECTION</span>
+                                    <span className="text-[8.5px] font-serif font-black tracking-tight mt-0.5 text-amber-100">{slide.badgeText || "2026"}</span>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* Manual Slide Controls: Chevron Left & Right (Only visible on hover) */}
+                      {bannerSlides.length > 1 && (
                         <>
-                          <div className="absolute -right-6 -bottom-6 w-40 h-40 bg-white/20 rounded-full blur-2xl" />
-                          <div className="absolute right-12 top-2 w-28 h-28 bg-black/10 rounded-full blur-xl" />
-                          <div className="absolute left-1/3 bottom-4 w-16 h-16 bg-white/10 rounded-full blur-lg" />
+                          <button
+                            onClick={() => {
+                              setActiveSlideIdx((prev) => (prev === 0 ? bannerSlides.length - 1 : prev - 1));
+                            }}
+                            className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/70 hover:bg-white border border-neutral-150 shadow-xs flex items-center justify-center text-neutral-800 opacity-0 group-hover:opacity-100 transition cursor-pointer z-25"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveSlideIdx((prev) => (prev === bannerSlides.length - 1 ? 0 : prev + 1));
+                            }}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/70 hover:bg-white border border-neutral-150 shadow-xs flex items-center justify-center text-neutral-800 opacity-0 group-hover:opacity-100 transition cursor-pointer z-25"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
                         </>
                       )}
-                      
-                      <div className="relative z-10 max-w-full w-full space-y-4 flex flex-col items-start">
-                        {/* Elegant pill badge */}
-                        <span className="bg-white/20 border border-white/20 text-white text-[9.5px] md:text-[10px] font-extrabold py-1.5 px-3.5 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5 shadow-2xs">
-                          {bannerConfig.tagline || "✨ OPULENT SAVINGS"}
-                        </span>
-                        
-                        {/* Title text */}
-                        <h2 className="font-display font-bold text-2xl md:text-3xl lg:text-4xl leading-tight text-white max-w-[85%] tracking-tight">
-                          {bannerConfig.title || "Exclusive 50% Luxury Sale"}
-                        </h2>
-                        
-                        {/* Shop Now Button */}
-                        <button 
-                          onClick={() => { setActiveTab("store"); setSelectedCategory("Heels"); }}
-                          className="bg-black text-white hover:bg-neutral-900 font-bold text-xs px-6 py-3 rounded-full transition shadow-md cursor-pointer inline-flex items-center mt-2"
-                        >
-                          Shop Now
-                        </button>
+
+                      {/* Bullet Page Slide Indicators */}
+                      {bannerSlides.length > 1 && (
+                        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-25">
+                          {bannerSlides.map((_, dotIdx) => (
+                            <button
+                              key={dotIdx}
+                              onClick={() => setActiveSlideIdx(dotIdx)}
+                              className={`h-2 rounded-full transition-all cursor-pointer ${
+                                dotIdx === activeSlideIdx ? "w-6 bg-neutral-900" : "w-2 bg-neutral-400/50"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* PREMIUM TRUST FEATURE BAR (Directly matching bottom of reference image) */}
+                    <div className="bg-neutral-950 rounded-[28px] py-5 px-6 shadow-xs border border-neutral-850 text-white select-none">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 divide-y lg:divide-y-0 lg:divide-x divide-neutral-850">
+                        {/* Box 1 */}
+                        <div className="flex items-center gap-3 pl-2 py-1.5 lg:py-0">
+                          <div className="w-9 h-9 bg-neutral-900 rounded-full flex items-center justify-center text-[#BC9D4E] shrink-0 border border-neutral-800 shadow-3xs">
+                            <Truck size={16} />
+                          </div>
+                          <div className="text-left leading-tight">
+                            <h4 className="text-[9.5px] uppercase font-extrabold tracking-widest text-[#D4AF37]">FREE SHIPPING</h4>
+                            <p className="text-[9.5px] text-neutral-400 font-bold mt-0.5">On All Orders</p>
+                          </div>
+                        </div>
+
+                        {/* Box 2 */}
+                        <div className="flex items-center gap-3 pl-2 lg:pl-6 py-1.5 lg:py-0 pt-3 lg:pt-0">
+                          <div className="w-9 h-9 bg-neutral-900 rounded-full flex items-center justify-center text-[#BC9D4E] shrink-0 border border-neutral-800 shadow-3xs">
+                            <RotateCcw size={16} />
+                          </div>
+                          <div className="text-left leading-tight">
+                            <h4 className="text-[9.5px] uppercase font-extrabold tracking-widest text-[#D4AF37]">EASY RETURNS</h4>
+                            <p className="text-[9.5px] text-neutral-400 font-bold mt-0.5">Hassle Free</p>
+                          </div>
+                        </div>
+
+                        {/* Box 3 */}
+                        <div className="flex items-center gap-3 pl-2 lg:pl-6 py-1.5 lg:py-0 pt-3 lg:pt-0">
+                          <div className="w-9 h-9 bg-neutral-900 rounded-full flex items-center justify-center text-[#BC9D4E] shrink-0 border border-neutral-800 shadow-3xs">
+                            <ShieldCheck size={16} />
+                          </div>
+                          <div className="text-left leading-tight">
+                            <h4 className="text-[9.5px] uppercase font-extrabold tracking-widest text-[#D4AF37]">SECURE PAYMENTS</h4>
+                            <p className="text-[9.5px] text-neutral-400 font-bold mt-0.5">100% Safe & Secure</p>
+                          </div>
+                        </div>
+
+                        {/* Box 4 */}
+                        <div className="flex items-center gap-3 pl-2 lg:pl-6 py-1.5 lg:py-0 pt-3 lg:pt-0">
+                          <div className="w-9 h-9 bg-neutral-900 rounded-full flex items-center justify-center text-[#BC9D4E] shrink-0 border border-neutral-800 shadow-3xs">
+                            <Headphones size={16} />
+                          </div>
+                          <div className="text-left leading-tight">
+                            <h4 className="text-[9.5px] uppercase font-extrabold tracking-widest text-[#D4AF37]">24/7 SUPPORT</h4>
+                            <p className="text-[9.5px] text-neutral-400 font-bold mt-0.5">We're Here For You</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
                     {/* Dynamic Category Pill Tabs */}
-                    <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
+                    <div className="flex gap-2.5 overflow-x-auto lg:overflow-visible lg:flex-wrap no-scrollbar py-1">
                       {["All", "Heels", "Flats", "Wedges", "Daily Wear"].map((cat) => (
                         <button
                           key={cat}
@@ -1520,8 +2049,8 @@ Total Paid:     ₹${ord.totalAmount}
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        {featuredProducts.slice(0, 2).map((prod) => {
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
+                        {(isMobile ? featuredProducts.slice(0, 2) : featuredProducts.slice(0, 4)).map((prod) => {
                           const displayProps = getProductDisplayProps(prod);
                           return (
                             <div
@@ -1586,8 +2115,8 @@ Total Paid:     ₹${ord.totalAmount}
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        {featuredProducts.slice(2, 4).map((prod) => {
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
+                        {(isMobile ? featuredProducts.slice(2, 4) : featuredProducts.slice(0, 4)).map((prod) => {
                           const displayProps = getProductDisplayProps(prod);
                           return (
                             <div
@@ -1720,7 +2249,7 @@ Total Paid:     ₹${ord.totalAmount}
                         </p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-6">
                         {filteredProducts.map((prod) => {
                           const displayProps = getProductDisplayProps(prod);
                           return (
@@ -1794,7 +2323,7 @@ Total Paid:     ₹${ord.totalAmount}
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {favorites.map((favId) => {
                           const prod = products.find(p => p.id === favId);
                           if (!prod) return null;
@@ -1887,9 +2416,9 @@ Total Paid:     ₹${ord.totalAmount}
                         </button>
                       </div>
                     ) : (
-                      <>
+                      <div className={`grid grid-cols-1 ${(profileSubView === "main" || !profileSubView) ? "lg:grid-cols-3 lg:items-start gap-6" : ""} w-full`}>
                         {/* 1. Main visual header with interactive Avatar & Photo Selector */}
-                        <div className="bg-white rounded-[28px] p-5 border border-neutral-100 shadow-xs space-y-4">
+                        <div className={`bg-white rounded-[28px] p-5 border border-neutral-100 shadow-xs space-y-4 ${(profileSubView === "main" || !profileSubView) ? "lg:col-span-1" : ""}`}>
                           <div className="flex items-center gap-4">
                             <div className="relative">
                               <img 
@@ -2172,12 +2701,377 @@ Total Paid:     ₹${ord.totalAmount}
                           </motion.div>
                         )}
 
+                        {/* SUBVIEW D: MERCHANT BANNER SLIDER SETTINGS */}
+                        {profileSubView === "merchant_settings" && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 15 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -15 }}
+                            className="space-y-5 text-left"
+                          >
+                            <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-sm space-y-4">
+                              <div className="flex justify-between items-center pb-2 border-b border-neutral-50">
+                                <div>
+                                  <h4 className="font-display font-black text-sm text-neutral-900 uppercase tracking-wider">Merchant Slider Manager</h4>
+                                  <p className="text-[10px] text-neutral-400 font-medium font-bold mt-0.5">Customize your storefront slides in real-time</p>
+                                </div>
+                                <button 
+                                  onClick={() => { setProfileSubView("main"); setEditingSlideIdx(null); }}
+                                  className="text-[10px] text-neutral-400 hover:text-black font-extrabold"
+                                >
+                                  Back
+                                </button>
+                              </div>
+
+                              {/* Save Indicator Banner */}
+                              {slidesSaveSuccess && (
+                                <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-bold p-3.5 rounded-xl flex items-center gap-2">
+                                  <CheckCircle size={15} className="text-emerald-600" />
+                                  <span>Slider configurations successfully published & synced to cloud!</span>
+                                </div>
+                              )}
+
+                              {/* LIST OF SLIDES (WHEN NOT EDITING) */}
+                              {editingSlideIdx === null ? (
+                                <div className="space-y-3">
+                                  <div className="space-y-2">
+                                    {bannerSlides.map((slide, idx) => (
+                                      <div key={slide.id || idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-neutral-50 border border-neutral-150 rounded-2xl gap-3">
+                                        <div className="flex items-center gap-3">
+                                          {slide.imageUrl ? (
+                                            <div className="w-12 h-12 rounded-xl bg-white border border-neutral-150 flex items-center justify-center p-1 overflow-hidden shrink-0">
+                                              <img src={slide.imageUrl} alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                                            </div>
+                                          ) : (
+                                            <div className="w-12 h-12 rounded-xl bg-neutral-200 flex items-center justify-center text-neutral-500 shrink-0">
+                                              CS
+                                            </div>
+                                          )}
+                                          <div>
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[9px] bg-neutral-200 text-neutral-700 px-1.5 py-0.5 rounded-md font-extrabold uppercase">Slide {idx + 1}</span>
+                                              <span className="text-[9px] font-mono text-neutral-400">{slide.id}</span>
+                                            </div>
+                                            <h5 className="text-xs font-bold text-neutral-900 mt-1">{slide.title || "Untitled Slide"}</h5>
+                                            <p className="text-[10px] text-neutral-400 truncate max-w-[180px] sm:max-w-xs">{slide.subtext}</p>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 self-end sm:self-center">
+                                          {/* Reorder Buttons */}
+                                          <button
+                                            disabled={idx === 0}
+                                            onClick={() => {
+                                              const updated = [...bannerSlides];
+                                              const temp = updated[idx];
+                                              updated[idx] = updated[idx - 1];
+                                              updated[idx - 1] = temp;
+                                              handleSaveBannerSlides(updated);
+                                            }}
+                                            className="p-1.5 rounded-lg bg-white border border-neutral-150 hover:bg-neutral-50 text-neutral-700 disabled:opacity-35 transition cursor-pointer"
+                                            title="Move Up"
+                                          >
+                                            <svg className="w-3.5 h-3.5 animate-none" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" />
+                                            </svg>
+                                          </button>
+                                          <button
+                                            disabled={idx === bannerSlides.length - 1}
+                                            onClick={() => {
+                                              const updated = [...bannerSlides];
+                                              const temp = updated[idx];
+                                              updated[idx] = updated[idx + 1];
+                                              updated[idx + 1] = temp;
+                                              handleSaveBannerSlides(updated);
+                                            }}
+                                            className="p-1.5 rounded-lg bg-white border border-neutral-150 hover:bg-neutral-50 text-neutral-700 disabled:opacity-35 transition cursor-pointer"
+                                            title="Move Down"
+                                          >
+                                            <svg className="w-3.5 h-3.5 animate-none" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                            </svg>
+                                          </button>
+
+                                          {/* Edit / Delete */}
+                                          <button
+                                            onClick={() => {
+                                              setEditingSlideIdx(idx);
+                                              setSlideTagline(slide.tagline || "");
+                                              setSlideScriptText(slide.scriptText || "");
+                                              setSlideTitle(slide.title || "");
+                                              setSlideSubtext(slide.subtext || "");
+                                              setSlideCtaText(slide.ctaText || "");
+                                              setSlideImageUrl(slide.imageUrl || "");
+                                              setSlideBadgeText(slide.badgeText || "");
+                                              setSlideBgGradient(slide.bgGradient || "");
+                                            }}
+                                            className="px-2.5 py-1.5 rounded-lg bg-white border border-neutral-150 text-neutral-800 hover:bg-neutral-50 font-bold text-[10px] uppercase tracking-wider transition cursor-pointer animate-none"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              if (bannerSlides.length <= 1) {
+                                                alert("You must keep at least one slide in the carousel.");
+                                                return;
+                                              }
+                                              const updated = bannerSlides.filter((_, sIdx) => sIdx !== idx);
+                                              handleSaveBannerSlides(updated);
+                                              if (activeSlideIdx >= updated.length) {
+                                                setActiveSlideIdx(0);
+                                              }
+                                            }}
+                                            className="p-1.5 rounded-lg bg-white border border-neutral-150 hover:bg-red-50 text-red-500 transition cursor-pointer"
+                                            title="Delete Slide"
+                                          >
+                                            <Trash2 size={13} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="pt-2 flex flex-col gap-2">
+                                    <button
+                                      onClick={() => {
+                                        const newIdx = bannerSlides.length;
+                                        setEditingSlideIdx(newIdx);
+                                        setSlideTagline("NEW COLLECTION");
+                                        setSlideScriptText("Feel The");
+                                        setSlideTitle("ELEGANT COMFORT");
+                                        setSlideSubtext("Indulge in premium footwear made from rich materials.");
+                                        setSlideCtaText("SHOP NOW");
+                                        setSlideImageUrl("https://lh3.googleusercontent.com/d/1pBh6vEJCwByC2_DD0c9rE42MDbwrd8u5");
+                                        setSlideBadgeText("NEW ARRIVAL");
+                                        setSlideBgGradient("linear-gradient(to bottom right, #FCFAF5, #F4EEE8, #ECE4DB)");
+                                      }}
+                                      className="w-full py-3 bg-neutral-900 hover:bg-black text-white font-extrabold text-[10.5px] uppercase tracking-wider rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                                    >
+                                      <Plus size={13} />
+                                      <span>Add New Slide</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* SLIDE EDITOR FORM */
+                                <div className="space-y-4">
+                                  <div className="flex justify-between items-center bg-neutral-50 p-3 rounded-xl border border-neutral-150">
+                                    <span className="text-xs font-bold text-neutral-850">
+                                      {editingSlideIdx < bannerSlides.length ? `Editing Slide ${editingSlideIdx + 1}` : "Adding New Slide"}
+                                    </span>
+                                    <button
+                                      onClick={() => setEditingSlideIdx(null)}
+                                      className="text-[10px] text-neutral-400 hover:text-black font-extrabold"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+
+                                  <div className="space-y-3 text-left">
+                                    {/* Script text & Title */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="space-y-1">
+                                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Script Text (Cursive)</label>
+                                        <input
+                                          type="text"
+                                          value={slideScriptText}
+                                          onChange={(e) => setSlideScriptText(e.target.value)}
+                                          placeholder="e.g. Step Into"
+                                          className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Main Heading (Uppercase)</label>
+                                        <input
+                                          type="text"
+                                          required
+                                          value={slideTitle}
+                                          onChange={(e) => setSlideTitle(e.target.value)}
+                                          placeholder="e.g. COMFORT & ELEGANCE"
+                                          className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* Tagline & Subtext */}
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Top Tagline</label>
+                                      <input
+                                        type="text"
+                                        value={slideTagline}
+                                        onChange={(e) => setSlideTagline(e.target.value)}
+                                        placeholder="e.g. PREMIUM WOMEN'S FOOTWEAR"
+                                        className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Description Subtext</label>
+                                      <textarea
+                                        value={slideSubtext}
+                                        onChange={(e) => setSlideSubtext(e.target.value)}
+                                        placeholder="Enter descriptive text for the banner slide..."
+                                        rows={2}
+                                        className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black resize-none"
+                                      />
+                                    </div>
+
+                                    {/* CTA Text & Gold Badge */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="space-y-1">
+                                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">CTA Button Text</label>
+                                        <input
+                                          type="text"
+                                          value={slideCtaText}
+                                          onChange={(e) => setSlideCtaText(e.target.value)}
+                                          placeholder="e.g. SHOP NOW"
+                                          className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Gold Stamp Text (Year)</label>
+                                        <input
+                                          type="text"
+                                          value={slideBadgeText}
+                                          onChange={(e) => setSlideBadgeText(e.target.value)}
+                                          placeholder="e.g. 2026"
+                                          className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* Image URL & Preset Selection */}
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Footwear Image URL</label>
+                                      <input
+                                        type="url"
+                                        value={slideImageUrl}
+                                        onChange={(e) => setSlideImageUrl(e.target.value)}
+                                        placeholder="Paste shoe picture URL..."
+                                        className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      />
+                                      {/* Preset suggest buttons */}
+                                      <div className="flex items-center gap-1.5 mt-1.5">
+                                        <span className="text-[8px] text-neutral-400 uppercase font-black tracking-widest block mr-1 font-bold">Presets:</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideImageUrl("https://lh3.googleusercontent.com/d/1pBh6vEJCwByC2_DD0c9rE42MDbwrd8u5")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Gold Sandals
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideImageUrl("https://lh3.googleusercontent.com/d/1yhXKS2ODpODTdlfTmQhgjdmFnkyPIU9w")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Luxury Wedges
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideImageUrl("https://lh3.googleusercontent.com/d/1As3HJoUjLOTUJ3OffwCc-0_xTI9sCh4J")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Daily Sandals
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Background Gradient */}
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] uppercase tracking-wider font-extrabold text-neutral-400 block">Background Gradient Style</label>
+                                      <input
+                                        type="text"
+                                        value={slideBgGradient}
+                                        onChange={(e) => setSlideBgGradient(e.target.value)}
+                                        placeholder="CSS Gradient background value..."
+                                        className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black font-mono text-[10px]"
+                                      />
+                                      {/* Presets */}
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideBgGradient("linear-gradient(to bottom right, #FCFAF5, #F4EEE8, #ECE4DB)")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Gold/Cream
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideBgGradient("linear-gradient(to bottom right, #FCFAF9, #F6EEEC, #ECE2E0)")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Rose Gold
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideBgGradient("linear-gradient(to bottom right, #FCFAF7, #F5EFE9, #ECDED0)")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Warm Sand
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSlideBgGradient("linear-gradient(to bottom right, #1A1916, #12110E, #0A0A09)")}
+                                          className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 border border-neutral-150 rounded-lg text-[8px] font-bold text-neutral-700 cursor-pointer"
+                                        >
+                                          Midnight Black
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-2 pt-2">
+                                    <button
+                                      type="button"
+                                      disabled={isSavingSlides}
+                                      onClick={() => {
+                                        const newSlide: BannerSlide = {
+                                          id: editingSlideIdx < bannerSlides.length ? bannerSlides[editingSlideIdx].id : `slide-${Date.now()}`,
+                                          tagline: slideTagline,
+                                          scriptText: slideScriptText,
+                                          title: slideTitle,
+                                          subtext: slideSubtext,
+                                          ctaText: slideCtaText,
+                                          imageUrl: slideImageUrl,
+                                          badgeText: slideBadgeText,
+                                          bgGradient: slideBgGradient
+                                        };
+
+                                        const updated = [...bannerSlides];
+                                        if (editingSlideIdx < bannerSlides.length) {
+                                          updated[editingSlideIdx] = newSlide;
+                                        } else {
+                                          updated.push(newSlide);
+                                        }
+
+                                        handleSaveBannerSlides(updated);
+                                        setEditingSlideIdx(null);
+                                      }}
+                                      className="flex-1 py-3 bg-neutral-900 hover:bg-black text-white font-extrabold text-[10.5px] uppercase tracking-wider rounded-xl transition cursor-pointer disabled:opacity-55"
+                                    >
+                                      {isSavingSlides ? "Saving..." : "Save Slide Settings"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingSlideIdx(null)}
+                                      className="px-5 py-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-extrabold text-[10.5px] uppercase tracking-wider rounded-xl transition cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+
                         {/* SUBVIEW C: MAIN PROFILE DASHBOARD SYSTEM */}
                         {(profileSubView === "main" || !profileSubView) && (
                           <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="space-y-5 text-left"
+                            className="space-y-5 text-left lg:col-span-2"
                           >
                             {/* Profile Submenus */}
                             <div className="bg-white rounded-[28px] border border-neutral-100 overflow-hidden divide-y divide-neutral-50 shadow-xs">
@@ -2238,6 +3132,26 @@ Total Paid:     ₹${ord.totalAmount}
                                   </div>
                                 </div>
                                 <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                </svg>
+                              </button>
+
+                              <button
+                                onClick={() => setProfileSubView("merchant_settings")}
+                                className="w-full p-4 flex items-center justify-between hover:bg-amber-50/10 transition text-left cursor-pointer bg-amber-50/5 border-t border-neutral-100"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 border border-amber-100">
+                                    <Sliders size={16} />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-bold text-neutral-950">Merchant Slider Settings</h4>
+                                    <p className="text-[10px] text-neutral-400 mt-0.5 font-medium">
+                                      Customize the premium home hero slides
+                                    </p>
+                                  </div>
+                                </div>
+                                <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                                 </svg>
                               </button>
@@ -2319,8 +3233,78 @@ Total Paid:     ₹${ord.totalAmount}
                             </div>
                           </motion.div>
                         )}
-                      </>
+                      </div>
                 )}
+
+              {/* PREMIUM RESPONSIVE DESKTOP FOOTER */}
+              <footer className="hidden md:block mt-16 border-t border-neutral-100 bg-neutral-50/30 rounded-t-[32px] pt-12 pb-8 px-6 md:px-12 text-left">
+                <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
+                  {/* Brand column */}
+                  <div className="space-y-3.5 col-span-1 md:col-span-2">
+                    <h3 className="font-display font-black text-lg text-neutral-900 tracking-tight">Comfort Steps</h3>
+                    <p className="text-xs text-neutral-400 font-normal leading-relaxed max-w-sm">
+                      Step into premium luxury. Crafted with bespoke cushion footbed technology and high-grade breathable materials for ultimate daily comfort.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="bg-emerald-50 border border-emerald-100 text-[#059669] text-[9px] font-extrabold px-2.5 py-0.5 rounded-full">
+                        ✓ 100% Original Comfort
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Discover Column */}
+                  <div className="space-y-3">
+                    <span className="text-[9.5px] uppercase font-extrabold tracking-widest text-neutral-400 block font-sans">Discover</span>
+                    <ul className="space-y-2 text-xs font-bold">
+                      <li>
+                        <button onClick={() => { setActiveTab("home"); setSelectedProduct(null); }} className="text-neutral-500 hover:text-black transition cursor-pointer">
+                          Premium Showcase
+                        </button>
+                      </li>
+                      <li>
+                        <button onClick={() => { setActiveTab("store"); setSelectedProduct(null); }} className="text-neutral-500 hover:text-black transition cursor-pointer">
+                          Footwear Catalog
+                        </button>
+                      </li>
+                      <li>
+                        <button onClick={() => { setActiveTab("wishlist"); setSelectedProduct(null); }} className="text-neutral-500 hover:text-black transition cursor-pointer">
+                          My Wishlist
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Customer Column */}
+                  <div className="space-y-3">
+                    <span className="text-[9.5px] uppercase font-extrabold tracking-widest text-neutral-400 block font-sans">Support & Legal</span>
+                    <ul className="space-y-2 text-xs font-bold">
+                      <li>
+                        <button onClick={() => { setScreen("privacy_policy"); }} className="text-neutral-500 hover:text-black transition cursor-pointer font-sans">
+                          Privacy Policy
+                        </button>
+                      </li>
+                      <li>
+                        <button onClick={() => { setScreen("my_orders"); }} className="text-neutral-500 hover:text-black transition cursor-pointer font-sans">
+                          Track My Order
+                        </button>
+                      </li>
+                      <li>
+                        <span className="text-neutral-500 font-normal">Care: info@comfortsteps.com</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="max-w-7xl mx-auto border-t border-neutral-100 mt-10 pt-6 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] text-neutral-400 font-bold">
+                  <span>© 2026 Comfort Steps Luxury. Handcrafted with pride.</span>
+                  <div className="flex items-center gap-4">
+                    <span>Verified Comfort Guaranteed</span>
+                    <span>•</span>
+                    <span>Secure Encrypted Checkouts</span>
+                  </div>
+                </div>
+              </footer>
+
               </div>
             )}
               </motion.div>
@@ -2364,10 +3348,10 @@ Total Paid:     ₹${ord.totalAmount}
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
-              className="max-w-md mx-auto px-4 py-6"
+              className="max-w-md md:max-w-3xl lg:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-6 lg:py-12"
             >
               {/* Nav */}
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex lg:hidden justify-between items-center mb-6">
                 <button 
                   onClick={() => setScreen("dashboard")}
                   className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
@@ -2388,8 +3372,11 @@ Total Paid:     ₹${ord.totalAmount}
                 </button>
               </div>
 
-              {/* Images stage */}
-              <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-xs mb-5 relative">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start mt-4">
+                {/* Left Column: Image Gallery */}
+                <div className="lg:sticky lg:top-24">
+                  {/* Images stage */}
+                  <div className="bg-white rounded-[28px] p-6 border border-neutral-100 shadow-xs mb-5 relative">
                 <div className="h-[220px] flex items-center justify-center rounded-2xl bg-[#F5F5F4] overflow-hidden p-4 relative">
                   <motion.img 
                     key={`${selectedColor}-${activeImageIdx}`}
@@ -2428,10 +3415,13 @@ Total Paid:     ₹${ord.totalAmount}
                     ))}
                   </div>
                 )}
-              </div>
+                  </div>
+                </div>
 
-              {/* Specs Header */}
-              <div className="space-y-1.5 mb-5">
+                {/* Right Column: Specs & Options */}
+                <div className="bg-white rounded-[28px] p-6 md:p-8 border border-neutral-100 shadow-xs space-y-6">
+                  {/* Specs Header */}
+                  <div className="space-y-1.5">
                 <span className="text-[10px] text-neutral-400 font-extrabold uppercase tracking-widest block">{selectedProduct.brand}</span>
                 <div className="flex justify-between items-start gap-3">
                   <h1 className="font-display font-black text-xl text-neutral-900 leading-tight">{selectedProduct.name}</h1>
@@ -2641,6 +3631,8 @@ Total Paid:     ₹${ord.totalAmount}
                   </AnimatePresence>
                 </button>
               </div>
+            </div>
+          </div>
             </motion.div>
           );
         })()}
@@ -2652,10 +3644,10 @@ Total Paid:     ₹${ord.totalAmount}
             initial={{ opacity: 0, x: 15 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -15 }}
-            className="max-w-md mx-auto px-4 py-6"
+            className="max-w-md md:max-w-3xl lg:max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-6 lg:py-12"
           >
             {/* Header */}
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex lg:hidden justify-between items-center mb-6">
               <button 
                 onClick={() => setScreen("dashboard")}
                 className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
@@ -2805,9 +3797,11 @@ Total Paid:     ₹${ord.totalAmount}
                 </button>
               </div>
             ) : (
-              <div className="space-y-5">
-                {/* Cart Items list */}
-                <div className="space-y-3">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                {/* Left Column: Cart Items */}
+                <div className="lg:col-span-7 space-y-4">
+                  {/* Cart Items list */}
+                  <div className="space-y-3">
                   {cart.map((item, idx) => (
                     <div 
                       key={`${item.product.id}-${item.selectedSize}-${item.selectedColor}`}
@@ -2857,7 +3851,10 @@ Total Paid:     ₹${ord.totalAmount}
                     </div>
                   ))}
                 </div>
+              </div>
 
+              {/* Right Column: Order Summary & Checkout */}
+              <div className="lg:col-span-5 space-y-5 lg:sticky lg:top-24">
                 {/* Subtotals card */}
                 <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-xs">
                   <div className="flex justify-between text-xs text-neutral-500 mb-1.5">
@@ -3013,6 +4010,7 @@ Total Paid:     ₹${ord.totalAmount}
                   </motion.form>
                 )}
               </div>
+            </div>
             )}
           </motion.div>
         )}
@@ -3087,10 +4085,10 @@ Total Paid:     ₹${ord.totalAmount}
             initial={{ opacity: 0, x: 15 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -15 }}
-            className="max-w-md mx-auto px-4 py-6 pb-28 space-y-6"
+            className="max-w-md md:max-w-3xl lg:max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-6 lg:py-12 pb-28 space-y-6"
           >
             {/* Header */}
-            <div className="flex justify-between items-center">
+            <div className="flex lg:hidden justify-between items-center">
               <button 
                 onClick={() => setScreen("dashboard")}
                 className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
@@ -3139,7 +4137,7 @@ Total Paid:     ₹${ord.totalAmount}
                 </button>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 {myOrders.map((ord) => {
                   const isCancellable = ord.status === "Pending" || ord.status === "Processing";
                   const isAddressEditable = ord.status === "Pending" || ord.status === "Processing";
@@ -3683,7 +4681,7 @@ Total Paid:     ₹${ord.totalAmount}
       </AnimatePresence>
 
       {/* FLOATING BOT NAV BAR */}
-      {screen !== "onboarding" && (
+      {screen !== "onboarding" && !isDesktop && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-sm px-4">
           <div className="bg-white/90 backdrop-blur-md border border-neutral-100 rounded-[28px] px-6 py-3 shadow-xl flex justify-between items-center text-neutral-400">
             

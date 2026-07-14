@@ -88,3 +88,16 @@ export interface FirebaseConfigData {
   measurementId?: string;
   databaseURL?: string;
 }
+
+export interface BannerSlide {
+  id: string;
+  tagline: string;
+  scriptText: string;
+  title: string;
+  subtext: string;
+  ctaText: string;
+  imageUrl: string;
+  badgeText: string;
+  bgGradient: string;
+  features?: { label: string; icon: string }[];
+}
