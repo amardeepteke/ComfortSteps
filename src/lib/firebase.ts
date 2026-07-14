@@ -44,8 +44,11 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMsg = error instanceof Error ? error.message : String(error);
+  const errorCode = (error && typeof error === "object" && "code" in error) ? (error as any).code : "";
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMsg,
     authInfo: {
       userId: auth?.currentUser?.uid || null,
       email: auth?.currentUser?.email || null,
@@ -60,8 +63,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  console.error("Firestore Error: ", JSON.stringify(errInfo));
+
+  const isPermissionError = 
+    String(errorCode).includes("permission-denied") || 
+    errorMsg.toLowerCase().includes("permission") || 
+    errorMsg.toLowerCase().includes("insufficient");
+
+  if (isPermissionError) {
+    throw new Error(JSON.stringify(errInfo));
+  }
 }
 
 // Get config from localStorage

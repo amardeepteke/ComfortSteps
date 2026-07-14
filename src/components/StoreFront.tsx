@@ -563,6 +563,9 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   const [firebaseActive, setFirebaseActive] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
+  // Mouse Position for Premium Zoom-on-Hover Magnifier
+  const [zoomPos, setZoomPos] = useState({ x: 0, y: 0, show: false });
+
   // Load persistence states on mount
   useEffect(() => {
     // Favorites
@@ -3434,7 +3437,6 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
             : 0;
 
           // Mouse Position for Premium Zoom-on-Hover Magnifier
-          const [zoomPos, setZoomPos] = useState({ x: 0, y: 0, show: false });
           const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
             const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
             const x = ((e.clientX - left) / width) * 100;
