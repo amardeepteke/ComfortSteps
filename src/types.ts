@@ -78,6 +78,10 @@ export interface Order {
   status: "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
   createdAt: string;
   paymentMethod: "COD" | "UPI" | "Card" | "GooglePay" | string;
+  paymentId?: string;
+  paymentStatus?: "Paid" | "Pending" | "Failed";
+  alternatePhone?: string;
+  addressType?: "Home" | "Work";
 }
 
 export interface FirebaseConfigData {
