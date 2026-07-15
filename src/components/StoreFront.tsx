@@ -1306,21 +1306,10 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     const shippingAddrStr = `${name}, ${activeAddress.flatHouse}${bld}, ${activeAddress.area}${loc}, Landmark: ${activeAddress.landmark || "N/A"}, ${activeAddress.city}, ${activeAddress.state} - ${activeAddress.pinCode}${altP}${typeLabel}`;
 
     const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-    
-    let couponDsc = 0;
-    if (appliedCoupon) {
-      if (appliedCoupon.type === "percent") {
-        couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
-      } else {
-        couponDsc = appliedCoupon.discount;
-      }
-    }
-
+    const gstTax = Math.round(subtotal * 0.18);
     const shipping = subtotal >= 2999 ? 0 : 150;
-    // Add Protect Promise / Premium packaging fee
-    const packagingFee = 49; 
     const codFee = payMethod === "COD" ? 50 : 0;
-    const totalToPay = subtotal - couponDsc + shipping + packagingFee + codFee;
+    const totalToPay = subtotal + gstTax + shipping + codFee;
 
     // Set or sync guest user tracking email
     let trackingEmail = (currentUser?.email || profileEmail || "").trim();
@@ -1406,17 +1395,9 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     }
 
     const subtotal = totalCartPrice;
-    let couponDsc = 0;
-    if (appliedCoupon) {
-      if (appliedCoupon.type === "percent") {
-        couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
-      } else {
-        couponDsc = appliedCoupon.discount;
-      }
-    }
+    const gstTax = Math.round(subtotal * 0.18);
     const shipping = subtotal >= 2999 ? 0 : 150;
-    const packagingFee = 49;
-    const totalToPay = subtotal - couponDsc + shipping + packagingFee;
+    const totalToPay = subtotal + gstTax + shipping;
 
     const activeAddress = addresses.find(a => a.id === selectedAddressId) || addresses[0] || {
       fullName: profileName || "Vanish Teke",
@@ -4969,228 +4950,189 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
 
                 {/* STEP 3: ORDER SUMMARY & OFFERS */}
                 {checkoutStep === "summary" && (
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                    <div className="lg:col-span-8 space-y-6">
-                      {/* Active address summary widget */}
-                      <div className="bg-white rounded-3xl p-5 border border-[#BC9D4E]/30 shadow-sm text-left space-y-3">
-                        <div className="flex justify-between items-center border-b border-neutral-100 pb-2">
-                          <span className="text-[10px] font-black text-[#BC9D4E] uppercase tracking-widest block">Deliver to this Address</span>
-                          <button onClick={() => setCheckoutStep("address")} className="text-[10px] text-black hover:text-[#BC9D4E] font-black uppercase tracking-widest flex items-center gap-1 transition">
-                            Edit / Change Address
-                          </button>
+                  <motion.div 
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    className="max-w-2xl mx-auto space-y-6 pb-20 px-2 md:px-0 text-neutral-900"
+                  >
+                    {/* Header with Back Button and Title */}
+                    <div className="flex items-center justify-between pb-2">
+                      <button 
+                        onClick={() => setCheckoutStep("address")} 
+                        className="p-2 hover:bg-neutral-100 rounded-full transition cursor-pointer shrink-0"
+                        title="Back to Address"
+                      >
+                        <ChevronLeft size={22} className="text-neutral-900" />
+                      </button>
+                      <h2 className="font-display font-black text-lg tracking-[0.2em] text-neutral-900 text-center uppercase flex-1 mr-8">
+                        MY CART
+                      </h2>
+                    </div>
+
+                    {/* Progress Indicator Card */}
+                    <div className="bg-white border border-neutral-100/80 rounded-2xl p-4 shadow-sm flex items-center justify-between text-[10px] md:text-xs font-bold tracking-wider">
+                      <div className="flex items-center gap-2 text-[#BC9D4E]">
+                        <div className="w-5 h-5 rounded-full bg-[#BC9D4E] flex items-center justify-center text-white text-[10px] shadow-sm">
+                          <Check size={11} className="stroke-[3]" />
                         </div>
-                        {(() => {
-                          const active = addresses.find(a => a.id === selectedAddressId) || addresses[0];
-                          if (!active) {
-                            return (
-                              <p className="text-xs text-amber-600 font-bold">No shipping address selected. Please go back to Step 1.</p>
-                            );
-                          }
-                          return (
-                            <div className="space-y-1 text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-neutral-900">{active.fullName}</span>
-                                <span className="bg-neutral-100 text-neutral-500 text-[8px] font-black tracking-widest uppercase px-1.5 py-0.5 rounded-md">
-                                  {active.addressType || "Home"}
-                                </span>
-                              </div>
-                              <p className="text-neutral-600 leading-relaxed font-medium">
-                                {active.flatHouse}, {active.buildingName}, {active.area}, {active.locality}, {active.landmark ? `Landmark: ${active.landmark}, ` : ""}{active.city}, {active.state} - <span className="font-bold text-neutral-900">{active.pinCode}</span>
-                              </p>
-                              <div className="text-[11px] text-neutral-500 font-bold flex gap-3 mt-1">
-                                <span>📞 {active.phone}</span>
-                                {active.alternatePhone && <span>📞 Alt: {active.alternatePhone}</span>}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                        <span>ADDRESS</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 text-black">
+                        <div className="w-5 h-5 rounded-full bg-black flex items-center justify-center text-white text-[10px] font-black shadow-sm">
+                          2
+                        </div>
+                        <span className="font-black">ORDER SUMMARY</span>
                       </div>
 
-                      {/* Items Reviewed summary */}
-                      <div className="bg-white rounded-3xl p-5 border border-neutral-200 shadow-sm space-y-4 text-left">
-                        <h4 className="text-xs font-black text-neutral-900 uppercase tracking-wider border-b border-neutral-100 pb-2 flex justify-between items-center">
-                          <span>Items Reviewed</span>
-                          <span className="text-[#BC9D4E]">{cart.reduce((sum, i) => sum + i.quantity, 0)} Items</span>
-                        </h4>
-
-                        <div className="space-y-3.5 max-h-[320px] overflow-y-auto pr-1">
-                          {cart.map((item, idx) => (
-                            <div key={idx} className="flex gap-4 p-3 bg-neutral-50/60 rounded-2xl border border-neutral-100 transition hover:border-neutral-200">
-                              <div className="w-16 h-16 bg-white rounded-xl border border-neutral-150 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
-                                <img src={item.product.images[0]} alt="" className="max-h-full max-w-full object-contain" referrerPolicy="no-referrer" />
-                              </div>
-                              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                                <h4 className="font-bold text-xs text-neutral-900 truncate leading-tight">{item.product.name}</h4>
-                                <div className="flex items-center gap-1.5 text-[9.5px] text-neutral-500 font-bold">
-                                  <span>Color: {item.selectedColor}</span>
-                                  <span>•</span>
-                                  <span>Size: {item.selectedSize}</span>
-                                  <span>•</span>
-                                  <span>Qty: {item.quantity}</span>
-                                </div>
-                                <span className="text-xs font-black text-neutral-950">₹{item.product.price}</span>
-                              </div>
-                            </div>
-                          ))}
+                      <div className="flex items-center gap-2 text-neutral-300">
+                        <div className="w-5 h-5 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-400 text-[10px] border border-neutral-200">
+                          3
                         </div>
-
-                        {/* Dispatch timer notification banner */}
-                        <div className="bg-[#BC9D4E]/5 border border-[#BC9D4E]/25 rounded-2xl p-4 flex items-center gap-3">
-                          <div className="text-xl">⏳</div>
-                          <div className="space-y-0.5">
-                            <span className="text-[9.5px] font-black text-[#BC9D4E] uppercase tracking-wider block">Est. Dispatch Deadline</span>
-                            <p className="text-[11px] text-neutral-600 font-medium">
-                              Order within <span className="font-black text-black">{countdownStr}</span> to unlock guaranteed <span className="font-bold text-neutral-900">Express Next-Day Ship handover</span>!
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Offers coupon selection wizard */}
-                      <div className="bg-white rounded-3xl p-5 border border-neutral-200 shadow-sm space-y-4 text-left">
-                        <h4 className="text-xs font-black text-neutral-900 uppercase tracking-wider border-b border-neutral-100 pb-2">
-                          Promo Offer Code
-                        </h4>
-                        <div className="flex gap-3">
-                          <input 
-                            type="text" 
-                            value={couponInput}
-                            onChange={(e) => {
-                              setCouponInput(e.target.value);
-                              setCouponError(null);
-                            }}
-                            placeholder="PROMO CODE"
-                            className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black focus:bg-white uppercase font-bold"
-                          />
-                          <button 
-                            onClick={() => {
-                              const upper = couponInput.toUpperCase().trim();
-                              const match = AVAILABLE_COUPONS.find(c => c.code === upper);
-                              if (match) {
-                                setAppliedCoupon({ code: match.code, discount: match.discount, type: match.type as any });
-                                setCouponError(null);
-                              } else {
-                                setCouponError("Invalid promo code. Try WELCOME200 or GOLDSTORE.");
-                              }
-                            }}
-                            className="px-5 py-2 bg-black text-[#BC9D4E] border border-[#BC9D4E]/30 text-xs font-bold rounded-xl hover:bg-neutral-900 transition"
-                          >
-                            Apply
-                          </button>
-                        </div>
-
-                        {couponError && (
-                          <p className="text-[10px] text-rose-500 font-bold">{couponError}</p>
-                        )}
-
-                        {appliedCoupon && (
-                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex justify-between items-center">
-                            <div className="space-y-0.5 text-left">
-                              <span className="text-[9px] font-extrabold uppercase tracking-widest text-emerald-700">Active Coupon Code</span>
-                              <p className="text-xs font-black text-emerald-800">{appliedCoupon.code} Saved ₹{
-                                appliedCoupon.type === "percent" ? Math.round((totalCartPrice * appliedCoupon.discount) / 100) : appliedCoupon.discount
-                              }!</p>
-                            </div>
-                            <button 
-                              onClick={() => setAppliedCoupon(null)}
-                              className="text-[10px] text-rose-600 hover:underline font-extrabold uppercase tracking-widest"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        )}
-
-                        {/* List of Available coupons */}
-                        <div className="space-y-3 pt-2">
-                          <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block">Available Premium Offers</span>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {AVAILABLE_COUPONS.map(cp => (
-                              <div key={cp.code} className="border border-neutral-150 rounded-xl p-3 bg-neutral-50/20 flex justify-between items-center text-left hover:border-neutral-250 transition animate-fade-in">
-                                <div>
-                                  <span className="font-mono font-black text-[11px] text-neutral-900 bg-white border border-neutral-200 px-2 py-0.5 rounded shadow-3xs uppercase">{cp.code}</span>
-                                  <p className="text-[10px] text-[#8E8E8A] font-medium mt-1 leading-normal">{cp.desc}</p>
-                                </div>
-                                <button 
-                                  onClick={() => {
-                                    setAppliedCoupon({ code: cp.code, discount: cp.discount, type: cp.type as any });
-                                    setCouponInput(cp.code);
-                                    setCouponError(null);
-                                  }}
-                                  className="text-[10px] text-[#BC9D4E] hover:text-black font-black uppercase tracking-wider shrink-0 ml-2"
-                                >
-                                  Apply
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        <span>PAYMENT</span>
                       </div>
                     </div>
 
-                    {/* Breakdown Sticky right panel */}
-                    <div className="lg:col-span-4 space-y-4">
-                      <div className="bg-white rounded-3xl p-5 border border-neutral-200 shadow-md space-y-4 text-left">
-                        <h4 className="font-display font-bold text-[10px] uppercase tracking-widest text-neutral-400 border-b border-neutral-100 pb-2">
-                          Price Details
-                        </h4>
-
-                        {(() => {
-                          const subtotal = totalCartPrice;
-                          let couponDsc = 0;
-                          if (appliedCoupon) {
-                            if (appliedCoupon.type === "percent") {
-                              couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
-                            } else {
-                              couponDsc = appliedCoupon.discount;
-                            }
-                          }
-                          const gstTax = Math.round((subtotal - couponDsc) * 0.18); // 18% included GST
-                          const shipping = subtotal >= 2999 ? 0 : 150;
-                          const totalToPay = subtotal - couponDsc + shipping;
-
-                          return (
-                            <div className="space-y-2 text-xs text-neutral-500">
-                              <div className="flex justify-between">
-                                <span>Bag Items Total</span>
-                                <span className="font-bold text-neutral-800">₹{subtotal}</span>
-                              </div>
-                              {couponDsc > 0 && (
-                                <div className="flex justify-between text-emerald-600 font-bold">
-                                  <span>Promo Discount ({appliedCoupon?.code})</span>
-                                  <span>-₹{couponDsc}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between">
-                                <span>GST (18% Included)</span>
-                                <span className="font-bold text-neutral-700">₹{gstTax}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Premium Shipping</span>
-                                <span className={shipping === 0 ? "text-emerald-600 font-bold" : "font-bold text-neutral-800"}>
-                                  {shipping === 0 ? "FREE" : `₹${shipping}`}
-                                </span>
-                              </div>
-                              <div className="border-t border-neutral-100 pt-2.5 mt-2.5 flex justify-between font-black text-neutral-900 text-sm">
-                                <span>Final Payable Total</span>
-                                <span>₹{totalToPay}</span>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        <button
-                          onClick={() => setCheckoutStep("payment")}
-                          className="w-full py-3.5 bg-black hover:bg-neutral-900 text-[#BC9D4E] border border-[#BC9D4E]/25 font-bold text-xs rounded-xl tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                    {/* DELIVERY ADDRESS CARD */}
+                    <div className="bg-white rounded-[24px] p-6 border border-neutral-100 shadow-sm text-left space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-black text-[#BC9D4E] uppercase tracking-widest">
+                          DELIVER TO
+                        </span>
+                        <button 
+                          onClick={() => setCheckoutStep("address")} 
+                          className="text-[10px] text-neutral-900 hover:text-[#BC9D4E] font-black uppercase tracking-wider flex items-center gap-1 transition cursor-pointer"
                         >
-                          Proceed to Payment <ChevronRight size={14} />
+                          CHANGE ADDRESS <ChevronRight size={12} className="inline" />
                         </button>
                       </div>
 
-                      <button onClick={() => setCheckoutStep("address")} className="text-xs text-neutral-400 hover:text-black font-extrabold flex items-center gap-1.5 mx-auto">
-                        <ChevronLeft size={14} /> Back to Shipping Address
+                      {(() => {
+                        const active = addresses.find(a => a.id === selectedAddressId) || addresses[0];
+                        if (!active) {
+                          return (
+                            <p className="text-xs text-amber-600 font-bold">No shipping address selected. Please add an address.</p>
+                          );
+                        }
+                        return (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <MapPin size={16} className="text-[#BC9D4E] shrink-0" />
+                              <span className="font-extrabold text-neutral-900 text-sm">{active.fullName}</span>
+                              <span className="bg-[#BC9D4E]/10 text-[#BC9D4E] text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded">
+                                {active.addressType || "HOME"}
+                              </span>
+                            </div>
+                            <p className="text-neutral-500 leading-relaxed text-xs font-medium pl-6">
+                              {active.flatHouse}, {active.buildingName ? `${active.buildingName}, ` : ""}{active.area}, {active.locality ? `${active.locality}, ` : ""}{active.landmark ? `Landmark: ${active.landmark}, ` : ""}{active.city}, {active.state} - <span className="font-bold text-neutral-900">{active.pinCode}</span>
+                            </p>
+                            <div className="text-xs text-neutral-500 font-medium flex items-center gap-2 pl-6">
+                              <Phone size={14} className="text-[#BC9D4E] shrink-0" />
+                              <span>{active.phone}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* ITEMS REVIEWED CARD */}
+                    <div className="bg-white rounded-[24px] p-6 border border-neutral-100 shadow-sm space-y-5 text-left">
+                      <div className="flex justify-between items-center border-b border-neutral-100 pb-3">
+                        <h4 className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">
+                          ITEMS REVIEWED ({cart.reduce((sum, i) => sum + i.quantity, 0)})
+                        </h4>
+                        <span className="text-[10px] font-black text-[#BC9D4E] uppercase tracking-widest">
+                          {cart.reduce((sum, i) => sum + i.quantity, 0)} {cart.reduce((sum, i) => sum + i.quantity, 0) === 1 ? 'ITEM' : 'ITEMS'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                        {cart.map((item, idx) => (
+                          <div 
+                            key={idx} 
+                            className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-neutral-100/80 shadow-3xs hover:shadow-xs transition"
+                          >
+                            <div className="w-20 h-20 bg-neutral-50 rounded-2xl border border-neutral-100/60 p-2 flex items-center justify-center shrink-0">
+                              <img 
+                                src={item.product.images[0]} 
+                                alt={item.product.name} 
+                                className="max-h-full max-w-full object-contain mix-blend-multiply" 
+                                referrerPolicy="no-referrer" 
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0 flex justify-between items-center">
+                              <div className="space-y-1">
+                                <h4 className="font-bold text-xs text-neutral-900 leading-tight">
+                                  {item.product.name}
+                                </h4>
+                                <p className="text-[10px] text-neutral-500 font-bold">
+                                  Color: {item.selectedColor}  •  Size: {item.selectedSize}  •  Qty: {item.quantity}
+                                </p>
+                                <p className="text-sm font-black text-neutral-900 pt-1">
+                                  ₹{item.product.price.toLocaleString("en-IN")}
+                                </p>
+                              </div>
+                              <div className="bg-neutral-50 border border-neutral-100 text-neutral-700 text-xs font-bold px-3 py-1.5 rounded-lg shrink-0">
+                                {item.quantity} x
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* PRICE DETAILS CARD */}
+                    <div className="bg-white rounded-[24px] p-6 border border-neutral-100 shadow-sm space-y-4 text-left">
+                      <h4 className="text-[10px] font-black text-neutral-900 uppercase tracking-widest border-b border-neutral-100 pb-3">
+                        PRICE DETAILS
+                      </h4>
+
+                      {(() => {
+                        const subtotal = totalCartPrice;
+                        const gstTax = Math.round(subtotal * 0.18);
+                        const shipping = subtotal >= 2999 ? 0 : 150;
+                        const totalToPay = subtotal + gstTax + shipping;
+
+                        return (
+                          <div className="space-y-3.5 text-xs text-neutral-500 font-bold">
+                            <div className="flex justify-between">
+                              <span>Bag Total ({cart.reduce((sum, i) => sum + i.quantity, 0)} Items)</span>
+                              <span className="text-neutral-900 font-extrabold">₹{subtotal.toLocaleString("en-IN")}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Shipping</span>
+                              <span className={shipping === 0 ? "text-[#10B981] font-black" : "text-neutral-900 font-extrabold"}>
+                                {shipping === 0 ? "FREE" : `₹${shipping}`}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Taxes (GST 18%)</span>
+                              <span className="text-neutral-900 font-extrabold">₹{gstTax.toLocaleString("en-IN")}</span>
+                            </div>
+                            
+                            <div className="border-t border-dashed border-neutral-200 pt-3.5 mt-3.5 flex justify-between items-center text-sm">
+                              <span className="text-neutral-900 font-black tracking-wider uppercase text-xs">TOTAL PAYABLE</span>
+                              <span className="text-[#BC9D4E] font-black text-lg">
+                                ₹{totalToPay.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* BOTTOM BUTTON */}
+                    <div className="pt-2">
+                      <button
+                        onClick={() => setCheckoutStep("payment")}
+                        className="w-full py-4 bg-black hover:bg-neutral-900 text-[#BC9D4E] font-black text-xs rounded-full tracking-widest uppercase transition-all duration-300 shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span>PROCEED TO PAYMENT</span>
+                        <ChevronRight size={16} className="text-[#BC9D4E] stroke-[3]" />
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* STEP 4: PAYMENT SELECTION */}
@@ -5260,21 +5202,13 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                         </div>
                         {(() => {
                           const subtotal = totalCartPrice;
-                          let couponDsc = 0;
-                          if (appliedCoupon) {
-                            if (appliedCoupon.type === "percent") {
-                              couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
-                            } else {
-                              couponDsc = appliedCoupon.discount;
-                            }
-                          }
+                          const gstTax = Math.round(subtotal * 0.18);
                           const shipping = subtotal >= 2999 ? 0 : 150;
-                          const packagingFee = 49;
                           const codFee = paymentMethod === "COD" ? 50 : 0;
-                          const totalToPay = subtotal - couponDsc + shipping + packagingFee + codFee;
+                          const totalToPay = subtotal + gstTax + shipping + codFee;
                           return (
                             <div className="flex items-center gap-1.5">
-                              <span className="font-display font-black text-lg text-neutral-900">₹{totalToPay}</span>
+                              <span className="font-display font-black text-lg text-neutral-900">₹{totalToPay.toLocaleString("en-IN")}</span>
                               <motion.div
                                 animate={{ rotate: isAmountBreakdownOpen ? 180 : 0 }}
                                 transition={{ duration: 0.2 }}
@@ -5297,30 +5231,20 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                             {cart.map((item, idx) => (
                               <div key={idx} className="flex justify-between text-neutral-500">
                                 <span>{item.product.name} (Size: {item.selectedSize}, Qty: {item.quantity})</span>
-                                <span>₹{item.product.price * item.quantity}</span>
+                                <span>₹{(item.product.price * item.quantity).toLocaleString("en-IN")}</span>
                               </div>
                             ))}
-                            <div className="border-t border-dashed border-neutral-100 pt-2.5 mt-2 flex justify-between text-neutral-500">
+                             <div className="border-t border-dashed border-neutral-100 pt-2.5 mt-2 flex justify-between text-neutral-500">
                               <span>Cart Subtotal</span>
-                              <span>₹{totalCartPrice}</span>
+                              <span>₹{totalCartPrice.toLocaleString("en-IN")}</span>
                             </div>
-                            {appliedCoupon && (
-                              <div className="flex justify-between text-emerald-600 font-medium">
-                                <span>Coupon Discount ({appliedCoupon.code})</span>
-                                <span>-₹{
-                                  appliedCoupon.type === "percent" 
-                                    ? Math.round((totalCartPrice * appliedCoupon.discount) / 100) 
-                                    : appliedCoupon.discount
-                                }</span>
-                              </div>
-                            )}
                             <div className="flex justify-between text-neutral-500">
-                              <span>Premium Packaging & Protection Fee</span>
-                              <span>₹49</span>
+                              <span>Taxes (GST 18%)</span>
+                              <span>₹{Math.round(totalCartPrice * 0.18).toLocaleString("en-IN")}</span>
                             </div>
                             <div className="flex justify-between text-neutral-500">
                               <span>Shipping Charge</span>
-                              <span>{totalCartPrice >= 2999 ? "FREE" : "₹150"}</span>
+                              <span>{totalCartPrice >= 2999 ? "FREE" : `₹150`}</span>
                             </div>
                             {paymentMethod === "COD" && (
                               <div className="flex justify-between text-amber-700 font-medium">
@@ -5684,26 +5608,18 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-100 px-4 py-3.5 flex items-center justify-between gap-4 shadow-lg z-40 max-w-md mx-auto md:max-w-xl md:rounded-t-3xl">
                       {(() => {
                         const subtotal = totalCartPrice;
-                        let couponDsc = 0;
-                        if (appliedCoupon) {
-                          if (appliedCoupon.type === "percent") {
-                            couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
-                          } else {
-                            couponDsc = appliedCoupon.discount;
-                          }
-                        }
+                        const gstTax = Math.round(subtotal * 0.18);
                         const shipping = subtotal >= 2999 ? 0 : 150;
-                        const packagingFee = 49;
                         const codFee = paymentMethod === "COD" ? 50 : 0;
-                        const totalToPay = subtotal - couponDsc + shipping + packagingFee + codFee;
+                        const totalToPay = subtotal + gstTax + shipping + codFee;
 
                         return (
                           <>
                             <div className="text-left">
                               <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">Amount Payable</span>
                               <div className="flex items-baseline gap-1">
-                                <span className="font-display font-black text-lg text-neutral-900">₹{totalToPay}</span>
-                                <span className="text-[9px] text-[#BC9D4E] font-bold uppercase">Incl. Fees</span>
+                                <span className="font-display font-black text-lg text-neutral-900">₹{totalToPay.toLocaleString("en-IN")}</span>
+                                <span className="text-[9px] text-[#BC9D4E] font-bold uppercase">Incl. Taxes</span>
                               </div>
                             </div>
                             <button
