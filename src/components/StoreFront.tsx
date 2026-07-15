@@ -491,6 +491,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   const [selectedUpiApp, setSelectedUpiApp] = useState<string | null>(null);
   const [otherUpiId, setOtherUpiId] = useState<string>("");
   const [upiInputError, setUpiInputError] = useState<string | null>(null);
+  const [isAmountBreakdownOpen, setIsAmountBreakdownOpen] = useState<boolean>(false);
   const [isDetectingLocation, setIsDetectingLocation] = useState<boolean>(false);
   const [locationDetectionError, setLocationDetectionError] = useState<string | null>(null);
 
@@ -1384,6 +1385,84 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
     setCart([]);
     setAppliedCoupon(null);
     setCouponInput("");
+  };
+
+  const handleRazorpayPayment = async (upiAppOrId: string) => {
+    const isLoaded = await new Promise<boolean>((resolve) => {
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+
+    if (!isLoaded) {
+      alert("Razorpay payment gateway failed to load. Please check your internet connection.");
+      return;
+    }
+
+    const subtotal = totalCartPrice;
+    let couponDsc = 0;
+    if (appliedCoupon) {
+      if (appliedCoupon.type === "percent") {
+        couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
+      } else {
+        couponDsc = appliedCoupon.discount;
+      }
+    }
+    const shipping = subtotal >= 2999 ? 0 : 150;
+    const packagingFee = 49;
+    const totalToPay = subtotal - couponDsc + shipping + packagingFee;
+
+    const activeAddress = addresses.find(a => a.id === selectedAddressId) || addresses[0] || {
+      fullName: profileName || "Vanish Teke",
+      phone: "9876543210"
+    };
+    const name = activeAddress.fullName || profileName || "Vanish Teke";
+    const trackingEmail = currentUser?.email || profileEmail || "customer@comfortsteps.com";
+
+    const isCustomUpi = upiAppOrId.includes("@");
+    const upiPrefillValue = isCustomUpi ? upiAppOrId : upiAppOrId.toLowerCase();
+
+    const options = {
+      key: "rzp_test_dummykey",
+      amount: totalToPay * 100, // in paise
+      currency: "INR",
+      name: "Comfort Steps",
+      description: "Secure Checkout Payment",
+      image: "https://cdn-icons-png.flaticon.com/512/5968/5968260.png",
+      prefill: {
+        name: name,
+        email: trackingEmail,
+        contact: activeAddress.phone,
+        method: "upi",
+        vpa: upiPrefillValue,
+      },
+      theme: {
+        color: "#BC9D4E",
+      },
+      handler: function (response: any) {
+        handlePlacePremiumOrder("UPI", isCustomUpi ? "Other UPI" : upiAppOrId, isCustomUpi ? upiAppOrId : undefined, response.razorpay_payment_id || `PAY-${Date.now()}`);
+      },
+      modal: {
+        ondismiss: function () {
+          alert("Payment was cancelled or dismissed.");
+        }
+      }
+    };
+
+    try {
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+    } catch (error) {
+      console.error("Error launching Razorpay:", error);
+      alert("Could not initialize Razorpay. Placing order in simulator mode.");
+      handlePlacePremiumOrder("UPI", isCustomUpi ? "Other UPI" : upiAppOrId, isCustomUpi ? upiAppOrId : undefined, `PAY-SIM-${Date.now()}`);
+    }
   };
 
   const handleUpdateOrder = async (orderId: string, updatedFields: Partial<Order>) => {
@@ -5116,195 +5195,69 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
 
                 {/* STEP 4: PAYMENT SELECTION */}
                 {checkoutStep === "payment" && (
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                    <div className="lg:col-span-8 space-y-5">
-                      <div className="border-b border-neutral-100 pb-3 flex justify-between items-center">
-                        <h3 className="font-display font-black text-sm uppercase tracking-widest text-[#BC9D4E]">
-                          Choose Payment Option
-                        </h3>
-                        {/* Simulation Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => setIsPaymentFailed(prev => !prev)}
-                          className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition ${
-                            isPaymentFailed 
-                              ? "bg-rose-100 text-rose-700 border border-rose-200" 
-                              : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 border border-neutral-200"
-                          }`}
+                  <div className="max-w-2xl mx-auto space-y-6 pb-24 w-full">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={() => setCheckoutStep("summary")} 
+                          className="p-2 hover:bg-neutral-50 rounded-full transition cursor-pointer"
+                          title="Back to Summary"
                         >
-                          {isPaymentFailed ? "🔴 Simulate Failed State Active" : "🟢 Set Simulated Failure (Off)"}
+                          <ChevronLeft size={20} className="text-neutral-600" />
                         </button>
+                        <div className="text-left">
+                          <h2 className="font-display font-bold text-base text-neutral-900">Select Payment Method</h2>
+                          <p className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider">Step 3 of 3 • Choose Secure Option</p>
+                        </div>
                       </div>
-
-                      {isPaymentFailed && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-rose-50 border border-rose-200 rounded-3xl p-5 text-left space-y-2.5"
-                        >
-                          <div className="flex items-center gap-2 text-rose-600">
-                            <span className="text-lg">❌</span>
-                            <span className="font-extrabold text-xs uppercase tracking-wider">Payment Transaction Failure simulated</span>
-                          </div>
-                          <p className="text-[11px] text-rose-800 leading-relaxed font-medium">
-                            Your transaction could not be completed because the simulated checkout flag is active. Please toggle the simulation flag off above or try a different payment mode to proceed.
-                          </p>
-                        </motion.div>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-3.5">
-                        {([
-                          { key: "UPI", label: "Instant UPI Transfer", icon: "⚡" },
-                          { key: "COD", label: "Cash on Delivery (COD)", icon: "💵" }
-                        ] as const).map(pm => {
-                          const isSelected = paymentMethod === pm.key;
-                          return (
-                            <button
-                              key={pm.key}
-                              type="button"
-                              onClick={() => {
-                                setPaymentMethod(pm.key);
-                                if (pm.key === "COD") {
-                                  setSelectedUpiApp(null);
-                                } else {
-                                  setSelectedUpiApp("GPay");
-                                }
-                              }}
-                              className={`p-4 rounded-2xl border text-left transition flex flex-col gap-1.5 ${
-                                isSelected ? "border-black bg-neutral-50/20 shadow-xs" : "border-neutral-100 hover:bg-neutral-50"
-                              }`}
-                            >
-                              <span className="text-xl">{pm.icon}</span>
-                              <span className="font-black text-xs text-neutral-900">{pm.label}</span>
-                            </button>
-                          );
-                        })}
+                      <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-semibold border border-emerald-100">
+                        <ShieldCheck size={14} className="text-emerald-600" />
+                        <span>100% Secure</span>
                       </div>
-
-                      {paymentMethod === "UPI" && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-white rounded-3xl p-6 border border-neutral-100 shadow-3xs text-center space-y-5"
-                        >
-                          <div className="space-y-1.5 text-center">
-                            <span className="text-[9px] font-black text-[#BC9D4E] uppercase tracking-widest block">Authorized Payment Gateway</span>
-                            <h4 className="font-display font-black text-xs text-neutral-900 uppercase tracking-wider">Select Preferred UPI Application</h4>
-                          </div>
-
-                          {/* App choices */}
-                          <div className="grid grid-cols-5 gap-2">
-                            {([
-                              { name: "GPay", label: "Google Pay", icon: "💎" },
-                              { name: "PhonePe", label: "PhonePe", icon: "🔮" },
-                              { name: "Paytm", label: "Paytm", icon: "🏦" },
-                              { name: "AmazonPay", label: "Amazon Pay", icon: "📦" },
-                              { name: "Other", label: "Other UPI", icon: "✨" }
-                            ]).map((app) => {
-                              const isAppSel = selectedUpiApp === app.name;
-                              return (
-                                <button
-                                  key={app.name}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedUpiApp(app.name);
-                                    setUpiInputError(null);
-                                  }}
-                                  className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
-                                    isAppSel 
-                                      ? "bg-black text-[#BC9D4E] border-[#BC9D4E]" 
-                                      : "bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100"
-                                  }`}
-                                >
-                                  <span className="text-sm">{app.icon}</span>
-                                  <span className="text-[9px] font-black uppercase tracking-wider">{app.name}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {/* Custom fields for Other UPI app */}
-                          {selectedUpiApp === "Other" && (
-                            <div className="text-left space-y-2 max-w-sm mx-auto">
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-[#8E8E8A] block">Enter Your VPA / UPI ID *</label>
-                              <input 
-                                required
-                                type="text" 
-                                value={otherUpiId}
-                                onChange={(e) => setOtherUpiId(e.target.value)}
-                                className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black focus:bg-white font-mono"
-                                placeholder="username@upi"
-                              />
-                              {upiInputError && (
-                                <p className="text-[10px] text-rose-500 font-bold">{upiInputError}</p>
-                              )}
-                            </div>
-                          )}
-
-                          <div className="relative border border-dashed border-neutral-200 rounded-2xl p-4 bg-neutral-50 inline-flex flex-col items-center justify-center mx-auto">
-                            <QrCode size={130} className="text-black" />
-                            <span className="text-[8px] font-extrabold text-neutral-400 uppercase mt-2 tracking-widest">Comfort Steps Verified Merchant</span>
-                            {paymentVerifying && (
-                              <div className="absolute inset-0 bg-white/90 rounded-2xl flex flex-col items-center justify-center space-y-3 p-4">
-                                <div className="w-8 h-8 border-4 border-[#BC9D4E] border-t-transparent rounded-full animate-spin" />
-                                <p className="text-[10px] font-black text-neutral-700">Checking Bank Settlement Log... Please wait</p>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="max-w-xs mx-auto space-y-3.5">
-                            <div className="flex items-center justify-between bg-neutral-50 px-3 py-2 rounded-xl border border-neutral-100 text-xs font-bold text-neutral-800">
-                              <span className="font-mono">{adminUpiId}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(adminUpiId);
-                                  alert("Store UPI ID copied!");
-                                }}
-                                className="text-[9.5px] text-black bg-white hover:bg-neutral-100 border border-neutral-200 px-2 py-1 rounded-md transition font-black flex items-center gap-1 cursor-pointer"
-                              >
-                                <Copy size={10} /> Copy ID
-                              </button>
-                            </div>
-                            <p className="text-[10.5px] text-neutral-400 leading-relaxed font-medium">
-                              Submit settlement to our authorized store UPI ID. Click checkout below to instantly verify payment and confirm.
-                            </p>
-
-                            <div className="text-left space-y-1 max-w-sm mx-auto">
-                              <label className="text-[9px] uppercase tracking-wider font-extrabold text-[#8E8E8A] block">Transaction Reference ID (12-digit, optional)</label>
-                              <input 
-                                type="text"
-                                maxLength={12}
-                                className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black focus:bg-white font-mono"
-                                placeholder="e.g. 123456789012"
-                              />
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {paymentMethod === "COD" && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-amber-50/40 rounded-3xl p-5 border border-amber-200/50 space-y-3 text-left"
-                        >
-                          <div className="text-xl">⚠️</div>
-                          <h4 className="font-extrabold text-xs text-amber-900 uppercase tracking-wide">Cash on Delivery Shipment policy</h4>
-                          <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
-                            We charge an additional convenience fee of <span className="font-black text-black">₹50</span> to cover the shipping carrier's cash handling logs. Enjoy FREE next-day dispatch and skip the fee by paying via UPI!
-                          </p>
-                        </motion.div>
-                      )}
                     </div>
 
-                    {/* Breakdown Sticky Right column */}
-                    <div className="lg:col-span-4 space-y-4">
-                      <div className="bg-white rounded-3xl p-5 border border-neutral-100 shadow-md space-y-4 text-left">
-                        <h4 className="font-display font-bold text-[10px] uppercase tracking-widest text-neutral-400 border-b border-[#F5F5F4] pb-2">
-                          Amount Settled
-                        </h4>
+                    {/* Simulation Failure Toggle */}
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsPaymentFailed(prev => !prev)}
+                        className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${
+                          isPaymentFailed 
+                            ? "bg-rose-100 text-rose-700 border border-rose-200" 
+                            : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 border border-neutral-200"
+                        }`}
+                      >
+                        {isPaymentFailed ? "🔴 Simulate Failed State Active" : "🟢 Set Simulated Failure (Off)"}
+                      </button>
+                    </div>
 
+                    {isPaymentFailed && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-left space-y-2"
+                      >
+                        <div className="flex items-center gap-2 text-rose-600">
+                          <span className="text-sm">❌</span>
+                          <span className="font-extrabold text-xs uppercase tracking-wider">Payment Transaction Failure simulated</span>
+                        </div>
+                        <p className="text-[11px] text-rose-800 leading-relaxed font-medium">
+                          Your transaction could not be completed because the simulated checkout flag is active. Please toggle the simulation flag off above or try a different payment mode to proceed.
+                        </p>
+                      </motion.div>
+                    )}
+
+                    {/* Total Amount Premium Card with Breakdown Accordion */}
+                    <div className="bg-white rounded-2xl border border-neutral-100 shadow-3xs overflow-hidden">
+                      <button 
+                        onClick={() => setIsAmountBreakdownOpen(!isAmountBreakdownOpen)}
+                        className="w-full flex items-center justify-between p-4 bg-neutral-50/50 hover:bg-neutral-50 transition text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShoppingBag size={16} className="text-[#BC9D4E]" />
+                          <span className="font-display font-bold text-sm text-neutral-800">Total Amount</span>
+                        </div>
                         {(() => {
                           const subtotal = totalCartPrice;
                           let couponDsc = 0;
@@ -5316,61 +5269,485 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                             }
                           }
                           const shipping = subtotal >= 2999 ? 0 : 150;
+                          const packagingFee = 49;
                           const codFee = paymentMethod === "COD" ? 50 : 0;
-                          const totalToPay = subtotal - couponDsc + shipping + codFee;
-
+                          const totalToPay = subtotal - couponDsc + shipping + packagingFee + codFee;
                           return (
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between text-neutral-500">
-                                <span>Footwear Purchase</span>
-                                <span className="font-bold text-neutral-800">₹{subtotal - couponDsc}</span>
-                              </div>
-                              {codFee > 0 && (
-                                <div className="flex justify-between text-neutral-500">
-                                  <span>COD convenience Charge</span>
-                                  <span className="font-bold text-neutral-800">₹{codFee}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between text-neutral-500">
-                                <span>Premium Shipping</span>
-                                <span className="font-bold text-neutral-800">₹{shipping}</span>
-                              </div>
-                              <div className="border-t border-neutral-50 pt-2.5 mt-2.5 flex justify-between font-black text-neutral-900 text-sm">
-                                <span>Amount Payable</span>
-                                <span>₹{totalToPay}</span>
-                              </div>
-
-                              <button
-                                disabled={paymentVerifying}
-                                onClick={async () => {
-                                  if (isPaymentFailed) {
-                                    alert("Simulated Transaction Error: Payment Failed! Please check your credentials or switch payment modes.");
-                                    return;
-                                  }
-                                  
-                                  if (paymentMethod === "UPI" && selectedUpiApp === "Other" && !otherUpiId.includes("@")) {
-                                    setUpiInputError("Validation Fail: Please enter a valid UPI ID (e.g. username@upi)");
-                                    return;
-                                  }
-
-                                  handlePlacePremiumOrder(paymentMethod as any, selectedUpiApp || undefined);
-                                }}
-                                className="w-full mt-4 py-3 bg-black hover:bg-neutral-900 text-white font-bold text-xs rounded-xl tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-display font-black text-lg text-neutral-900">₹{totalToPay}</span>
+                              <motion.div
+                                animate={{ rotate: isAmountBreakdownOpen ? 180 : 0 }}
+                                transition={{ duration: 0.2 }}
                               >
-                                {paymentVerifying ? (
-                                  <>Verifying Settlement...</>
-                                ) : (
-                                  <>{paymentMethod === "UPI" ? `Verify & Place Order (₹${totalToPay})` : `Confirm & Place Order (₹${totalToPay})`}</>
-                                )}
-                              </button>
+                                <ChevronRight size={16} className="text-neutral-400 rotate-90" />
+                              </motion.div>
                             </div>
                           );
                         })()}
-                      </div>
-
-                      <button onClick={() => setCheckoutStep("summary")} className="text-xs text-neutral-400 hover:text-black font-extrabold flex items-center gap-1.5 mx-auto">
-                        <ChevronLeft size={14} /> Back to Summary
                       </button>
+
+                      <AnimatePresence>
+                        {isAmountBreakdownOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="border-t border-neutral-100 bg-white p-4 space-y-2.5 text-xs text-neutral-600 text-left"
+                          >
+                            {cart.map((item, idx) => (
+                              <div key={idx} className="flex justify-between text-neutral-500">
+                                <span>{item.product.name} (Size: {item.selectedSize}, Qty: {item.quantity})</span>
+                                <span>₹{item.product.price * item.quantity}</span>
+                              </div>
+                            ))}
+                            <div className="border-t border-dashed border-neutral-100 pt-2.5 mt-2 flex justify-between text-neutral-500">
+                              <span>Cart Subtotal</span>
+                              <span>₹{totalCartPrice}</span>
+                            </div>
+                            {appliedCoupon && (
+                              <div className="flex justify-between text-emerald-600 font-medium">
+                                <span>Coupon Discount ({appliedCoupon.code})</span>
+                                <span>-₹{
+                                  appliedCoupon.type === "percent" 
+                                    ? Math.round((totalCartPrice * appliedCoupon.discount) / 100) 
+                                    : appliedCoupon.discount
+                                }</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-neutral-500">
+                              <span>Premium Packaging & Protection Fee</span>
+                              <span>₹49</span>
+                            </div>
+                            <div className="flex justify-between text-neutral-500">
+                              <span>Shipping Charge</span>
+                              <span>{totalCartPrice >= 2999 ? "FREE" : "₹150"}</span>
+                            </div>
+                            {paymentMethod === "COD" && (
+                              <div className="flex justify-between text-amber-700 font-medium">
+                                <span>Cash on Delivery Handling Fee</span>
+                                <span>₹50</span>
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Delivery Address Compact Card */}
+                    {(() => {
+                      const activeAddress = addresses.find(a => a.id === selectedAddressId) || addresses[0] || {
+                        fullName: profileName || "Vanish Teke",
+                        firstName: "Vanish",
+                        lastName: "Teke",
+                        phone: profilePhone || "9876543210",
+                        flatHouse: "Penthouse 101, Luxury Enclave",
+                        area: "Koregaon Park",
+                        city: "Pune",
+                        state: "Maharashtra",
+                        pinCode: "411001"
+                      };
+                      const name = activeAddress.fullName || `${activeAddress.firstName || ""} ${activeAddress.lastName || ""}`.trim();
+                      const addressSummaryStr = `${activeAddress.flatHouse}, ${activeAddress.area}, ${activeAddress.city}, ${activeAddress.state} - ${activeAddress.pinCode}`;
+                      return (
+                        <div className="bg-white rounded-2xl border border-neutral-100 p-4 shadow-3xs flex items-start justify-between gap-4 text-left">
+                          <div className="flex gap-2.5">
+                            <MapPin size={16} className="text-neutral-400 mt-1 flex-shrink-0" />
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">Deliver To</span>
+                              <h4 className="font-bold text-xs text-neutral-900">{name}</h4>
+                              <p className="text-[11px] text-neutral-500 line-clamp-1 leading-normal">{addressSummaryStr}</p>
+                              <p className="text-[10px] text-neutral-400 font-mono">Phone: {activeAddress.phone}</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setCheckoutStep("address")}
+                            className="text-[11px] font-extrabold text-[#BC9D4E] hover:text-black uppercase tracking-wider border border-neutral-100 hover:border-[#BC9D4E] px-3 py-1.5 rounded-full transition cursor-pointer flex-shrink-0"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 5% Cashback Promotional Banner */}
+                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between gap-4 text-left">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center flex-shrink-0">
+                          <Sparkles size={18} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-xs text-emerald-800">5% Cashback</h4>
+                          <p className="text-[10.5px] text-emerald-600 font-medium">Claim now with active secure payment offers</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <div className="w-6 h-6 rounded-full bg-white border border-neutral-100 flex items-center justify-center shadow-3xs" title="GPay">
+                          <span className="text-[9px] font-bold text-blue-600">G</span>
+                        </div>
+                        <div className="w-6 h-6 rounded-full bg-[#5F259F] flex items-center justify-center shadow-3xs" title="PhonePe">
+                          <span className="text-[9px] font-bold text-white">पे</span>
+                        </div>
+                        <div className="w-6 h-6 rounded-full bg-black flex items-center justify-center shadow-3xs" title="AmazonPay">
+                          <span className="text-[7px] font-bold text-amber-500 font-mono">a</span>
+                        </div>
+                        <div className="w-6 h-6 rounded-full bg-neutral-100 flex items-center justify-center shadow-3xs text-neutral-500 text-[8px] font-bold">
+                          +3
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* UPI PAYMENT OPTIONS SECTION */}
+                    <div className="space-y-3.5 text-left">
+                      <h3 className="text-[10.5px] font-black uppercase tracking-widest text-neutral-400">UPI Payment Options</h3>
+                      
+                      <div className="space-y-3">
+                        {/* 1. Google Pay */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod("UPI");
+                            setSelectedUpiApp("GPay");
+                            setUpiInputError(null);
+                            handleRazorpayPayment("googlepay");
+                          }}
+                          className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                            paymentMethod === "UPI" && selectedUpiApp === "GPay"
+                              ? "border-[#BC9D4E] bg-amber-50/5 shadow-3xs" 
+                              : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-3xs"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-12 h-12 bg-white border border-neutral-100 rounded-xl flex items-center justify-center p-1 shadow-sm flex-shrink-0">
+                              <svg className="w-8 h-8" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M38.2 24c0-1.3-.1-2.5-.3-3.7H24v7H32c-.3 1.8-1.4 3.4-3 4.4v3.6h4.9c2.8-2.6 4.3-6.5 4.3-11.3z" fill="#4285F4"/>
+                                <path d="M24 38.5c3.9 0 7.2-1.3 9.6-3.6l-4.9-3.6c-1.3.9-3 1.5-4.7 1.5-3.6 0-6.7-2.5-7.8-5.8H1.2V31c2.4 4.8 7.4 7.5 12.8 7.5z" fill="#34A853"/>
+                                <path d="M16.2 27c-.3-.9-.4-1.9-.4-3s.1-2.1.4-3v-3.8H1.2C.4 18.8 0 21.3 0 24s.4 5.2 1.2 6.8l5-3.8c1.1-3.3 4.2-5.8 10-5.8z" fill="#FBBC05"/>
+                                <path d="M24 16.5c2.1 0 4 .7 5.5 2.1l4.1-4.1C31.2 12.2 27.9 11 24 11c-5.4 0-10.4 2.7-12.8 7.5l5 3.8c1.1-3.3 4.2-5.8 7.8-5.8z" fill="#EA4335"/>
+                              </svg>
+                            </div>
+                            <div>
+                              <h4 className="font-display font-bold text-sm text-neutral-900">Google Pay</h4>
+                              <p className="text-[11px] text-neutral-400 font-medium">Pay securely with Google Pay</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {paymentMethod === "UPI" && selectedUpiApp === "GPay" && (
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#BC9D4E]" />
+                            )}
+                            <ChevronRight size={16} className="text-neutral-300" />
+                          </div>
+                        </button>
+
+                        {/* 2. PhonePe */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod("UPI");
+                            setSelectedUpiApp("PhonePe");
+                            setUpiInputError(null);
+                            handleRazorpayPayment("phonepe");
+                          }}
+                          className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                            paymentMethod === "UPI" && selectedUpiApp === "PhonePe"
+                              ? "border-[#BC9D4E] bg-amber-50/5 shadow-3xs" 
+                              : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-3xs"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-12 h-12 bg-[#5F259F] rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+                              <span className="text-white font-black text-2xl font-sans">पे</span>
+                            </div>
+                            <div>
+                              <h4 className="font-display font-bold text-sm text-neutral-900">PhonePe</h4>
+                              <p className="text-[11px] text-neutral-400 font-medium">Pay instantly using PhonePe</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {paymentMethod === "UPI" && selectedUpiApp === "PhonePe" && (
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#BC9D4E]" />
+                            )}
+                            <ChevronRight size={16} className="text-neutral-300" />
+                          </div>
+                        </button>
+
+                        {/* 3. Amazon Pay */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod("UPI");
+                            setSelectedUpiApp("AmazonPay");
+                            setUpiInputError(null);
+                            handleRazorpayPayment("amazonpay");
+                          }}
+                          className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                            paymentMethod === "UPI" && selectedUpiApp === "AmazonPay"
+                              ? "border-[#BC9D4E] bg-amber-50/5 shadow-3xs" 
+                              : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-3xs"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-12 h-12 bg-black rounded-xl flex flex-col items-center justify-center p-1 shadow-sm flex-shrink-0">
+                              <span className="text-white font-bold text-[10px] tracking-tighter">amazon</span>
+                              <span className="text-[#FF9900] font-black text-[8px] tracking-widest uppercase -mt-0.5">pay</span>
+                            </div>
+                            <div>
+                              <h4 className="font-display font-bold text-sm text-neutral-900">Amazon Pay</h4>
+                              <p className="text-[11px] text-neutral-400 font-medium">Fast and secure with Amazon Pay</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {paymentMethod === "UPI" && selectedUpiApp === "AmazonPay" && (
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#BC9D4E]" />
+                            )}
+                            <ChevronRight size={16} className="text-neutral-300" />
+                          </div>
+                        </button>
+
+                        {/* 4. FamApp */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentMethod("UPI");
+                            setSelectedUpiApp("FamApp");
+                            setUpiInputError(null);
+                            handleRazorpayPayment("fampay");
+                          }}
+                          className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                            paymentMethod === "UPI" && selectedUpiApp === "FamApp"
+                              ? "border-[#BC9D4E] bg-amber-50/5 shadow-3xs" 
+                              : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-3xs"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+                              <span className="text-[#E2FF30] font-black text-sm tracking-tight">fam</span>
+                            </div>
+                            <div>
+                              <h4 className="font-display font-bold text-sm text-neutral-900">FamApp</h4>
+                              <p className="text-[11px] text-neutral-400 font-medium">Quick checkout using FamApp</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {paymentMethod === "UPI" && selectedUpiApp === "FamApp" && (
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#BC9D4E]" />
+                            )}
+                            <ChevronRight size={16} className="text-neutral-300" />
+                          </div>
+                        </button>
+
+                        {/* 5. Other UPI ID */}
+                        <div
+                          className={`p-4 rounded-2xl border transition text-left space-y-3 ${
+                            paymentMethod === "UPI" && selectedUpiApp === "Other"
+                              ? "border-[#BC9D4E] bg-amber-50/5" 
+                              : "border-neutral-100 bg-white"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentMethod("UPI");
+                              setSelectedUpiApp("Other");
+                              setUpiInputError(null);
+                            }}
+                            className="w-full flex items-center justify-between text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3.5">
+                              <div className="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+                                <span className="text-neutral-700 font-bold text-[10px] tracking-widest">UPI</span>
+                              </div>
+                              <div>
+                                <h4 className="font-display font-bold text-sm text-neutral-900">Other UPI</h4>
+                                <p className="text-[11px] text-neutral-400 font-medium">Enter any UPI ID to pay</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {paymentMethod === "UPI" && selectedUpiApp === "Other" && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#BC9D4E]" />
+                              )}
+                              <ChevronRight size={16} className={`text-neutral-300 transition ${selectedUpiApp === "Other" ? "rotate-90" : ""}`} />
+                            </div>
+                          </button>
+
+                          {selectedUpiApp === "Other" && (
+                            <motion.div 
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              className="pt-2 space-y-3 max-w-md"
+                            >
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] uppercase tracking-wider font-extrabold text-[#8E8E8A] block">Enter Your VPA / UPI ID *</label>
+                                <div className="flex gap-2">
+                                  <input 
+                                    required
+                                    type="text" 
+                                    value={otherUpiId}
+                                    onChange={(e) => {
+                                      setOtherUpiId(e.target.value);
+                                      setUpiInputError(null);
+                                    }}
+                                    className="flex-1 bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black focus:bg-white font-mono"
+                                    placeholder="example@okaxis"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!otherUpiId || !otherUpiId.includes("@")) {
+                                        setUpiInputError("Please enter a valid UPI ID (e.g. username@upi)");
+                                        return;
+                                      }
+                                      handleRazorpayPayment(otherUpiId);
+                                    }}
+                                    className="bg-black hover:bg-neutral-900 text-[#BC9D4E] font-black text-xs px-4 py-2 rounded-xl tracking-wider uppercase transition cursor-pointer"
+                                  >
+                                    Continue
+                                  </button>
+                                </div>
+                                {upiInputError && (
+                                  <p className="text-[10px] text-rose-500 font-bold mt-1">{upiInputError}</p>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* OTHER PAYMENT OPTIONS SECTION */}
+                    <div className="space-y-3 text-left pt-2">
+                      <h3 className="text-[10.5px] font-black uppercase tracking-widest text-neutral-400">Other Payment Option</h3>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod("COD");
+                          setSelectedUpiApp(null);
+                          setUpiInputError(null);
+                        }}
+                        className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                          paymentMethod === "COD"
+                            ? "border-black bg-neutral-50/10 shadow-3xs" 
+                            : "border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-3xs"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+                            <span className="text-xl">💵</span>
+                          </div>
+                          <div>
+                            <h4 className="font-display font-bold text-sm text-neutral-900">Cash on Delivery (COD)</h4>
+                            <p className="text-[11px] text-neutral-400 font-medium">Pay when your order arrives.</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {paymentMethod === "COD" && (
+                            <span className="w-2.5 h-2.5 rounded-full bg-black" />
+                          )}
+                          <ChevronRight size={16} className="text-neutral-300" />
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Bottom Authenticity Badges */}
+                    <div className="grid grid-cols-3 gap-2 border-t border-neutral-100 pt-6 text-center text-neutral-500">
+                      <div className="flex flex-col items-center space-y-1">
+                        <ShieldCheck size={18} className="text-neutral-400" />
+                        <span className="text-[10px] font-bold text-neutral-600 leading-tight">Safe & Secure Payments</span>
+                      </div>
+                      <div className="flex flex-col items-center space-y-1 border-x border-neutral-100">
+                        <div className="text-xs">🏆</div>
+                        <span className="text-[10px] font-bold text-neutral-600 leading-tight">100% Authentic</span>
+                      </div>
+                      <div className="flex flex-col items-center space-y-1">
+                        <Headphones size={18} className="text-neutral-400" />
+                        <span className="text-[10px] font-bold text-neutral-600 leading-tight">Help & Support</span>
+                      </div>
+                    </div>
+
+                    {/* Verification Overlay Portal */}
+                    {paymentVerifying && (
+                      <div className="fixed inset-0 bg-white/95 backdrop-blur-xs z-50 flex flex-col items-center justify-center space-y-4 p-6">
+                        <div className="relative">
+                          <div className="w-16 h-16 border-4 border-[#BC9D4E] border-t-transparent rounded-full animate-spin" />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <ShieldCheck size={24} className="text-[#BC9D4E]" />
+                          </div>
+                        </div>
+                        <div className="text-center space-y-1.5">
+                          <h3 className="font-display font-black text-sm uppercase tracking-wider text-neutral-800">Verifying Transaction</h3>
+                          <p className="text-[11px] text-neutral-500 max-w-xs leading-normal">Connecting to secure bank gateway and verifying your UPI settlement token. Please do not close or refresh this page.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sticky Bottom Button Panel */}
+                    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-100 px-4 py-3.5 flex items-center justify-between gap-4 shadow-lg z-40 max-w-md mx-auto md:max-w-xl md:rounded-t-3xl">
+                      {(() => {
+                        const subtotal = totalCartPrice;
+                        let couponDsc = 0;
+                        if (appliedCoupon) {
+                          if (appliedCoupon.type === "percent") {
+                            couponDsc = Math.round((subtotal * appliedCoupon.discount) / 100);
+                          } else {
+                            couponDsc = appliedCoupon.discount;
+                          }
+                        }
+                        const shipping = subtotal >= 2999 ? 0 : 150;
+                        const packagingFee = 49;
+                        const codFee = paymentMethod === "COD" ? 50 : 0;
+                        const totalToPay = subtotal - couponDsc + shipping + packagingFee + codFee;
+
+                        return (
+                          <>
+                            <div className="text-left">
+                              <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">Amount Payable</span>
+                              <div className="flex items-baseline gap-1">
+                                <span className="font-display font-black text-lg text-neutral-900">₹{totalToPay}</span>
+                                <span className="text-[9px] text-[#BC9D4E] font-bold uppercase">Incl. Fees</span>
+                              </div>
+                            </div>
+                            <button
+                              disabled={paymentVerifying}
+                              onClick={async () => {
+                                if (isPaymentFailed) {
+                                  alert("Simulated Transaction Error: Payment Failed! Please check your credentials or switch payment modes.");
+                                  return;
+                                }
+
+                                if (paymentMethod === "COD") {
+                                  handlePlacePremiumOrder("COD");
+                                  return;
+                                }
+
+                                if (paymentMethod === "UPI") {
+                                  const app = selectedUpiApp === "Other" ? otherUpiId : selectedUpiApp;
+                                  if (!app) {
+                                    alert("Please select a UPI application or enter a UPI ID.");
+                                    return;
+                                  }
+                                  if (selectedUpiApp === "Other" && !otherUpiId.includes("@")) {
+                                    setUpiInputError("Please enter a valid UPI ID (e.g. username@upi)");
+                                    return;
+                                  }
+                                  handleRazorpayPayment(app);
+                                }
+                              }}
+                              className="flex-1 bg-black hover:bg-neutral-900 text-white font-bold text-xs py-3 px-6 rounded-xl uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              {paymentVerifying ? (
+                                <div className="flex items-center gap-2">
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  <span>Verifying...</span>
+                                </div>
+                              ) : paymentMethod === "COD" ? (
+                                "Place Order"
+                              ) : (
+                                `Pay ₹${totalToPay}`
+                              )}
+                            </button>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
