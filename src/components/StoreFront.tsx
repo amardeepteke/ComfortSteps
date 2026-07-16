@@ -37,7 +37,8 @@ import {
   Copy,
   Share2,
   Star,
-  Clock
+  Clock,
+  Crown
 } from "lucide-react";
 import { Product, CartItem, Order, UserProfile, BannerSlide } from "../types";
 import { loginWithGoogle, logoutUser, auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -141,6 +142,10 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   const [addrPinCode, setAddrPinCode] = useState<string>(() => localStorage.getItem("comfort_addr_pin_code") || "");
   const [activeProfileSection, setActiveProfileSection] = useState<"profile" | "address" | null>(null);
   const [profileSubView, setProfileSubView] = useState<"main" | "personal_info" | "address_info" | null>(null);
+  const [orderFilter, setOrderFilter] = useState<"All Orders" | "Processing" | "Shipped" | "Delivered" | "Cancelled">("All Orders");
+  const [selectedDetailOrder, setSelectedDetailOrder] = useState<Order | null>(null);
+  const [isSecurityOpen, setIsSecurityOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
 
   // Contact Us state variables
   const [contactName, setContactName] = useState("");
@@ -3042,10 +3047,23 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
 
                 {/* TAB 4: PROFILE & SETTINGS */}
                 {activeTab === "profile" && (
-                  <div className="space-y-5">
-                    <div>
-                      <h2 className="font-display font-black text-xl text-neutral-900 tracking-tight">My Profile</h2>
-                      <p className="text-xs text-[#8E8E8A] mt-1">Manage sizes, addresses, and order logs.</p>
+                  <div className="max-w-2xl mx-auto px-4 py-4 md:py-8 space-y-6">
+                    {/* Header */}
+                    <div className="flex justify-between items-center">
+                      <div className="text-left">
+                        <h2 className="font-display font-black text-3xl text-neutral-900 tracking-tight lowercase">My Profile</h2>
+                        <p className="text-xs text-[#8E8E8A] mt-1 font-medium">Manage your account, addresses and orders</p>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-600 shadow-xs relative">
+                          <Bell size={18} />
+                          <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-orange-500 rounded-full ring-2 ring-white" />
+                        </div>
+                        <div className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-600 shadow-xs relative">
+                          <Mail size={18} />
+                          <span className="absolute -top-1 -right-1 bg-neutral-950 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border-2 border-white">2</span>
+                        </div>
+                      </div>
                     </div>
 
                     {!currentUser ? (
@@ -3093,67 +3111,37 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                         </button>
                       </div>
                     ) : (
-                      <div className={`grid grid-cols-1 ${(profileSubView === "main" || !profileSubView) ? "lg:grid-cols-3 lg:items-start gap-6" : ""} w-full`}>
-                        {/* 1. Main visual header with interactive Avatar & Photo Selector */}
-                        <div className={`bg-white rounded-[28px] p-5 border border-neutral-100 shadow-xs space-y-4 ${(profileSubView === "main" || !profileSubView) ? "lg:col-span-1" : ""}`}>
+                      <div className="w-full space-y-6">
+                        {/* 1. Main visual card with User Info (Initial Circle, Name, Badge) */}
+                        <div className="bg-white rounded-[32px] p-6 border border-neutral-100 shadow-sm">
                           <div className="flex items-center gap-4">
-                            <div className="relative">
-                              <img 
-                                src={profilePic} 
-                                alt="Profile" 
-                                className="w-16 h-16 rounded-full object-cover border border-neutral-150 ring-4 ring-neutral-50"
-                                referrerPolicy="no-referrer"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setIsSelectingPic(!isSelectingPic)}
-                                className="absolute -bottom-1 -right-1 bg-black text-white p-1 rounded-full text-[8px] hover:scale-115 transition shadow-sm cursor-pointer"
-                                title="Edit Avatar"
-                              >
-                                ✏️
-                              </button>
+                            <div className="relative shrink-0">
+                              {profilePic && profilePic.startsWith("http") ? (
+                                <img 
+                                  src={profilePic} 
+                                  alt="Profile" 
+                                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-neutral-150 ring-4 ring-neutral-50"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#FAF6F0] flex items-center justify-center text-[#6E5D4F] font-display text-2xl sm:text-3xl font-black shadow-xs border border-[#F4EBE1]">
+                                  {(profileName || currentUser?.name || currentUser?.displayName || "C").trim().charAt(0).toUpperCase()}
+                                </div>
+                              )}
                             </div>
-                            <div className="space-y-0.5 text-left">
-                              <h3 className="font-display font-black text-base text-neutral-900 tracking-tight">{profileName || "Comfort Steps Buyer"}</h3>
-                              <p className="text-xs text-neutral-400 font-medium">{profileEmail}</p>
-                              
-                              <div className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-[#059669] text-[9px] font-extrabold px-2 py-0.5 rounded-full mt-1.5">
+                            <div className="space-y-0.5 text-left flex-1 min-w-0">
+                              <h3 className="font-display font-black text-lg sm:text-xl text-neutral-900 tracking-tight truncate">
+                                {profileName || "Comfort Steps Buyer"}
+                              </h3>
+                              <p className="text-xs text-neutral-500 font-medium truncate">
+                                {profileEmail}
+                              </p>
+                              <div className="inline-flex items-center gap-1.5 bg-[#EBFDF5] border border-[#A7F3D0]/60 text-[#047857] text-[11px] font-black px-3 py-1 rounded-full mt-1.5 shadow-xs">
                                 <span>✓</span>
                                 <span>Verified Comfort Buyer</span>
                               </div>
                             </div>
                           </div>
-
-                          {/* Expandable women avatars selector list */}
-                          {isSelectingPic && (
-                            <motion.div 
-                              initial={{ opacity: 0, y: -5 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="p-3 bg-neutral-50 rounded-2xl border border-neutral-100 space-y-2 text-left"
-                            >
-                              <span className="text-[9px] font-extrabold uppercase text-neutral-400 tracking-wider block">
-                                Choose Premium Female Avatar
-                              </span>
-                              <div className="flex gap-2.5 overflow-x-auto no-scrollbar py-1">
-                                {DUMMY_AVATARS.map((avatar, idx) => (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => {
-                                      setProfilePic(avatar);
-                                      localStorage.setItem("comfort_profile_pic", avatar);
-                                      setIsSelectingPic(false);
-                                    }}
-                                    className={`w-10 h-10 rounded-full overflow-hidden border-2 shrink-0 transition ${
-                                      profilePic === avatar ? "border-black scale-110 shadow-sm" : "border-transparent opacity-70 hover:opacity-100"
-                                    }`}
-                                  >
-                                    <img src={avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                  </button>
-                                ))}
-                              </div>
-                            </motion.div>
-                          )}
                         </div>
 
                         {/* SUBVIEWS CONDITIONAL RENDERING */}
@@ -3186,7 +3174,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                     value={profileName}
                                     onChange={(e) => setProfileName(e.target.value)}
                                     placeholder="Full name"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black"
+                                    className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-4 py-3 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                   />
                                 </div>
 
@@ -3197,7 +3185,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                     required
                                     value={profileEmail}
                                     onChange={(e) => setProfileEmail(e.target.value)}
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black"
+                                    className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-4 py-3 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                   />
                                 </div>
 
@@ -3209,7 +3197,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       setPreferredSize(e.target.value);
                                       localStorage.setItem("comfort_pref_size", e.target.value);
                                     }}
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-black cursor-pointer"
+                                    className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-4 py-3 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950 cursor-pointer"
                                   >
                                     <option value="">Select Size</option>
                                     {["5", "6", "7", "8", "9", "10", "11", "12"].map(s => (
@@ -3222,7 +3210,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                   <button 
                                     type="submit"
                                     disabled={isSavingProfile}
-                                    className="flex-1 py-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-2xl transition cursor-pointer disabled:opacity-55"
+                                    className="flex-1 py-3 bg-neutral-950 hover:bg-black text-white font-bold text-xs rounded-2xl transition cursor-pointer disabled:opacity-55"
                                   >
                                     {isSavingProfile ? "Saving..." : "Save Settings"}
                                   </button>
@@ -3268,7 +3256,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       value={addrFirstName}
                                       onChange={(e) => setAddrFirstName(e.target.value)}
                                       placeholder="First name"
-                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                     />
                                   </div>
                                   <div className="space-y-1">
@@ -3279,7 +3267,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       value={addrLastName}
                                       onChange={(e) => setAddrLastName(e.target.value)}
                                       placeholder="Last name"
-                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                     />
                                   </div>
                                 </div>
@@ -3292,7 +3280,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                     value={addrPhone}
                                     onChange={(e) => setAddrPhone(e.target.value)}
                                     placeholder="Contact phone number"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-black"
+                                    className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                   />
                                 </div>
 
@@ -3304,7 +3292,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                     value={addrFlatHouse}
                                     onChange={(e) => setAddrFlatHouse(e.target.value)}
                                     placeholder="e.g. Apartment 12B, Luxury Plaza"
-                                    className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-black"
+                                    className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                   />
                                 </div>
 
@@ -3317,7 +3305,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       value={addrArea}
                                       onChange={(e) => setAddrArea(e.target.value)}
                                       placeholder="e.g. Soho"
-                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                     />
                                   </div>
                                   <div className="space-y-1">
@@ -3327,7 +3315,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       value={addrLandmark}
                                       onChange={(e) => setAddrLandmark(e.target.value)}
                                       placeholder="e.g. Near Central Park"
-                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                     />
                                   </div>
                                 </div>
@@ -3341,7 +3329,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       value={addrCity}
                                       onChange={(e) => setAddrCity(e.target.value)}
                                       placeholder="e.g. New York"
-                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                     />
                                   </div>
                                   <div className="space-y-1">
@@ -3352,7 +3340,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                       value={addrPinCode}
                                       onChange={(e) => setAddrPinCode(e.target.value)}
                                       placeholder="e.g. 10012"
-                                      className="w-full bg-neutral-50 border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-black"
+                                      className="w-full bg-[#FAFAFA] border border-neutral-150 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-neutral-900 focus:border-neutral-950"
                                     />
                                   </div>
                                 </div>
@@ -3361,7 +3349,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                   <button 
                                     type="submit"
                                     disabled={isSavingProfile}
-                                    className="flex-1 py-3 bg-neutral-900 hover:bg-black text-white font-bold text-xs rounded-2xl transition cursor-pointer disabled:opacity-55"
+                                    className="flex-1 py-3 bg-neutral-955 hover:bg-black text-white font-bold text-xs rounded-2xl transition cursor-pointer disabled:opacity-55"
                                   >
                                     {isSavingProfile ? "Saving..." : "Save Address"}
                                   </button>
@@ -3378,134 +3366,102 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                           </motion.div>
                         )}
 
-
-
                         {/* SUBVIEW C: MAIN PROFILE DASHBOARD SYSTEM */}
                         {(profileSubView === "main" || !profileSubView) && (
                           <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="space-y-5 text-left lg:col-span-2"
+                            className="space-y-4 w-full"
                           >
-                            {/* Profile Submenus */}
-                            <div className="bg-white rounded-[28px] border border-neutral-100 overflow-hidden divide-y divide-neutral-50 shadow-xs">
-                              
-                              <button
-                                onClick={() => setProfileSubView("personal_info")}
-                                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition text-left cursor-pointer"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
-                                    <User size={16} />
+                            {/* Modular Grid of Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {[
+                                {
+                                  id: "personal",
+                                  title: "Personal Details",
+                                  subtitle: "View and update your details",
+                                  icon: <User size={18} className="text-neutral-700" />,
+                                  action: () => setProfileSubView("personal_info")
+                                },
+                                {
+                                  id: "address",
+                                  title: "Shipping Addresses",
+                                  subtitle: "Manage your saved addresses",
+                                  icon: <MapPin size={18} className="text-neutral-700" />,
+                                  action: () => setProfileSubView("address_info")
+                                },
+                                {
+                                  id: "orders",
+                                  title: "My Orders",
+                                  subtitle: "View and track all your orders",
+                                  icon: <Package size={18} className="text-neutral-700" />,
+                                  action: () => { setScreen("my_orders"); setSelectedProduct(null); }
+                                },
+                                {
+                                  id: "wishlist",
+                                  title: "Wishlist",
+                                  subtitle: "View your favourite items",
+                                  icon: <Heart size={18} className="text-neutral-700" />,
+                                  action: () => { setScreen("dashboard"); setActiveTab("wishlist"); setSelectedProduct(null); }
+                                },
+                                {
+                                  id: "security",
+                                  title: "Account Security",
+                                  subtitle: "Manage password and security",
+                                  icon: <ShieldCheck size={18} className="text-neutral-700" />,
+                                  action: () => setIsSecurityOpen(true)
+                                },
+                                {
+                                  id: "support",
+                                  title: "Help & Support",
+                                  subtitle: "Get help and contact support",
+                                  icon: <Headphones size={18} className="text-neutral-700" />,
+                                  action: () => setIsSupportOpen(true)
+                                }
+                              ].map((card) => (
+                                <button
+                                  key={card.id}
+                                  onClick={card.action}
+                                  className="w-full bg-white hover:bg-neutral-50/80 border border-neutral-100 rounded-[24px] p-5 flex items-center justify-between shadow-xs hover:shadow-md transition duration-300 text-left group cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-11 h-11 bg-[#FAF6F0] rounded-full flex items-center justify-center shrink-0 group-hover:scale-105 transition duration-300">
+                                      {card.icon}
+                                    </div>
+                                    <div>
+                                      <h4 className="font-display font-black text-sm text-neutral-900 tracking-tight">{card.title}</h4>
+                                      <p className="text-[11px] text-neutral-500 font-medium mt-0.5">{card.subtitle}</p>
+                                    </div>
                                   </div>
-                                  <div>
-                                    <h4 className="text-xs font-bold text-neutral-950">Personal Details</h4>
-                                    <p className="text-[10px] text-neutral-400 mt-0.5">
-                                      {profileName ? profileName : "Not set"} {preferredSize ? `• US ${preferredSize}` : ""}
-                                    </p>
-                                  </div>
-                                </div>
-                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                </svg>
-                              </button>
-
-                              <button
-                                onClick={() => setProfileSubView("address_info")}
-                                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition text-left cursor-pointer"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
-                                    <MapPin size={16} />
-                                  </div>
-                                  <div className="max-w-[70%]">
-                                    <h4 className="text-xs font-bold text-neutral-950">Shipping Address</h4>
-                                    <p className="text-[10px] text-neutral-400 mt-0.5 truncate">
-                                      {profileAddress ? profileAddress : "No address specified"}
-                                    </p>
-                                  </div>
-                                </div>
-                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                </svg>
-                              </button>
-
-                              <button
-                                onClick={() => { setScreen("my_orders"); setSelectedProduct(null); }}
-                                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 transition text-left cursor-pointer"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center text-neutral-800">
-                                    <Package size={16} />
-                                  </div>
-                                  <div>
-                                    <h4 className="text-xs font-bold text-neutral-950">My Orders</h4>
-                                    <p className="text-[10px] text-neutral-400 mt-0.5">
-                                      View status of your {myOrders.length} order{myOrders.length !== 1 ? "s" : ""}
-                                    </p>
-                                  </div>
-                                </div>
-                                <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                                </svg>
-                              </button>
+                                  <ChevronRight size={18} className="text-neutral-400 group-hover:translate-x-1 transition duration-300" />
+                                </button>
+                              ))}
                             </div>
 
-                            {/* LIVE ORDER HISTORY LISTING IN COMPACT */}
-                            <div className="space-y-2.5">
-                              <h4 className="text-[9px] uppercase font-extrabold tracking-widest text-neutral-400">
-                                Recent Orders ({myOrders.length})
-                              </h4>
-
-                              {myOrders.length === 0 ? (
-                                <div className="bg-white rounded-2xl p-6 border border-neutral-100 text-center space-y-2">
-                                  <div className="w-9 h-9 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
-                                    <History size={14} />
-                                  </div>
-                                  <h5 className="font-bold text-xs text-neutral-800">No past purchases</h5>
-                                  <p className="text-[10px] text-[#8E8E8A] leading-relaxed max-w-[240px] mx-auto">
-                                    Place an order to test the history logs!
-                                  </p>
+                            {/* Comfort Steps Premium membership card */}
+                            <div className="bg-[#FAF6EE] border border-[#C9A34E]/25 rounded-[24px] p-5 flex items-center justify-between shadow-xs hover:shadow-md transition duration-300 text-left">
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-neutral-950 text-[#C9A34E] rounded-full flex items-center justify-center shrink-0">
+                                  <Crown size={20} />
                                 </div>
-                              ) : (
-                                <div className="space-y-3">
-                                  {myOrders.slice(0, 3).map((ord) => (
-                                    <div key={ord.id} className="bg-white border border-neutral-100 rounded-2xl p-3.5 space-y-2.5 shadow-xs">
-                                      <div className="flex justify-between items-center text-[10px]">
-                                        <span className="font-extrabold text-neutral-800">{ord.id}</span>
-                                        <span className="bg-neutral-900 text-white px-2 py-0.5 rounded-full font-bold">
-                                          ● {ord.status}
-                                        </span>
-                                      </div>
-
-                                      <div className="space-y-1 text-left">
-                                        {ord.items.map((item, idx) => (
-                                          <div key={idx} className="flex justify-between items-center text-[11px] text-neutral-600">
-                                            <span className="truncate max-w-[70%] font-medium">
-                                              {item.product.name} ({item.selectedSize})
-                                            </span>
-                                            <span>Qty {item.quantity}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-
-                                      <div className="border-t border-neutral-50 pt-2 flex justify-between items-center text-xs">
-                                        <span className="text-[10px] text-neutral-400">
-                                          {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                        </span>
-                                        <span className="font-extrabold text-neutral-900">₹{ord.totalAmount}</span>
-                                      </div>
-                                    </div>
-                                  ))}
+                                <div className="text-left">
+                                  <h4 className="font-display font-black text-sm text-[#8F743A] tracking-tight">Comfort Steps Premium</h4>
+                                  <p className="text-[11px] text-[#A68F5B] font-medium mt-0.5">Exclusive offers, early access and premium benefits</p>
                                 </div>
-                              )}
+                              </div>
+                              <ChevronRight size={18} className="text-[#C9A34E]" />
                             </div>
 
                             {/* Account Security & Action (Logout) */}
-                            <div className="bg-white rounded-[28px] p-5 border border-neutral-100 shadow-xs flex justify-between items-center">
-                              <div className="space-y-0.5">
-                                <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-widest block font-sans">Account Security</span>
-                                <span className="text-xs font-bold text-neutral-700">Logged in via Google Secure</span>
+                            <div className="bg-white rounded-[24px] p-5 border border-neutral-100 shadow-xs flex justify-between items-center gap-4 text-left">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                                  <ShieldCheck size={20} />
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-widest block font-sans">Account Security</span>
+                                  <span className="text-xs font-bold text-neutral-700 block truncate">Logged in via Google Secure</span>
+                                </div>
                               </div>
                               <button
                                 type="button"
@@ -3520,14 +3476,107 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                   setProfilePic("");
                                   localStorage.removeItem("comfort_profile_pic");
                                 }}
-                                className="text-[10px] bg-neutral-900 hover:bg-black text-white font-extrabold px-3 py-2 rounded-xl transition cursor-pointer"
+                                className="bg-neutral-955 hover:bg-black text-white font-extrabold text-xs px-5 py-2.5 rounded-full transition duration-300 hover:scale-102 active:scale-98 shrink-0 cursor-pointer shadow-xs"
                               >
-                                Logout Account
+                                Logout
                               </button>
                             </div>
                           </motion.div>
                         )}
-                      </div>
+
+                      {/* MODAL SERVICES */}
+                      {/* SECURITY MODAL */}
+                      <AnimatePresence>
+                        {isSecurityOpen && (
+                          <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-neutral-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+                          >
+                            <motion.div 
+                              initial={{ scale: 0.95, y: 15 }}
+                              animate={{ scale: 1, y: 0 }}
+                              exit={{ scale: 0.95, y: 15 }}
+                              className="bg-white rounded-[32px] max-w-sm w-full p-6 space-y-5 shadow-xl relative border border-neutral-100"
+                            >
+                              <button 
+                                onClick={() => setIsSecurityOpen(false)}
+                                className="absolute top-4 right-4 text-neutral-400 hover:text-black transition cursor-pointer"
+                              >
+                                <X size={18} />
+                              </button>
+                              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                                <ShieldCheck size={24} />
+                              </div>
+                              <div className="text-center space-y-1.5">
+                                <h3 className="font-display font-black text-lg text-neutral-900">Google Secure</h3>
+                                <p className="text-xs text-neutral-500 leading-relaxed">
+                                  Your Comfort Steps account is securely protected by Google Authentication. No passwords are stored on our servers.
+                                </p>
+                              </div>
+                              <button 
+                                onClick={() => setIsSecurityOpen(false)}
+                                className="w-full py-3 bg-neutral-950 hover:bg-black text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                              >
+                                Close Security Center
+                              </button>
+                            </motion.div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* SUPPORT MODAL */}
+                      <AnimatePresence>
+                        {isSupportOpen && (
+                          <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-neutral-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+                          >
+                            <motion.div 
+                              initial={{ scale: 0.95, y: 15 }}
+                              animate={{ scale: 1, y: 0 }}
+                              exit={{ scale: 0.95, y: 15 }}
+                              className="bg-white rounded-[32px] max-w-sm w-full p-6 space-y-5 shadow-xl relative border border-neutral-100"
+                            >
+                              <button 
+                                onClick={() => setIsSupportOpen(false)}
+                                className="absolute top-4 right-4 text-neutral-400 hover:text-black transition cursor-pointer"
+                              >
+                                <X size={18} />
+                              </button>
+                              <div className="w-12 h-12 bg-[#FAF6F0] text-neutral-800 rounded-full flex items-center justify-center mx-auto">
+                                <Headphones size={24} />
+                              </div>
+                              <div className="text-center space-y-1.5">
+                                <h3 className="font-display font-black text-lg text-neutral-900 text-center">Help & Support</h3>
+                                <p className="text-xs text-neutral-500 leading-relaxed text-center">
+                                  Have questions about an order or our luxury footwear collection? Reach our concierge care team directly.
+                                </p>
+                                <div className="bg-neutral-50 rounded-2xl p-4 space-y-2 mt-4 text-xs font-medium border border-neutral-100 text-left">
+                                  <div className="flex justify-between">
+                                    <span className="text-neutral-400">Concierge Email:</span>
+                                    <span className="text-neutral-900 font-bold">care@comfortsteps.com</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-neutral-400">Response Time:</span>
+                                    <span className="text-emerald-600 font-bold">Under 12 Hours</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <button 
+                                onClick={() => setIsSupportOpen(false)}
+                                className="w-full py-3 bg-neutral-955 hover:bg-black text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                              >
+                                Got It, Thanks!
+                              </button>
+                            </motion.div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                 )}
 
               {/* PREMIUM RESPONSIVE DESKTOP FOOTER */}
@@ -5198,23 +5247,25 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
             initial={{ opacity: 0, x: 15 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -15 }}
-            className="max-w-md md:max-w-3xl lg:max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-6 lg:py-12 pb-28 space-y-6"
+            className="max-w-4xl mx-auto px-4 sm:px-6 py-6 md:py-10 pb-32 space-y-8 text-left"
           >
-            {/* Header */}
-            <div className="flex lg:hidden justify-between items-center">
+            {/* Elegant Header with Back Button */}
+            <div className="flex items-center gap-4 border-b border-neutral-100 pb-5">
               <button 
-                onClick={() => setScreen("dashboard")}
-                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 transition"
+                onClick={() => { setScreen("dashboard"); setActiveTab("profile"); }}
+                className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 active:scale-95 transition cursor-pointer"
               >
                 <ChevronLeft size={18} />
               </button>
-              <h2 className="font-display font-black text-sm text-neutral-900 uppercase tracking-widest">My Orders{currentUser ? ` (${myOrders.length})` : ""}</h2>
-              <div className="w-10 h-10" />
+              <div className="text-left">
+                <h2 className="font-display font-black text-2xl text-neutral-900 tracking-tight lowercase">My Orders</h2>
+                <p className="text-xs text-neutral-500 mt-0.5 font-medium">Track, modify, and manage your luxury footwear purchases</p>
+              </div>
             </div>
 
             {/* Orders List */}
             {!currentUser ? (
-              <div className="bg-white rounded-[26px] p-8 border border-neutral-100 shadow-xs text-center space-y-4">
+              <div className="bg-white rounded-[32px] p-8 border border-neutral-100 shadow-xs text-center space-y-4">
                 <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
                   <Lock size={32} />
                 </div>
@@ -5226,13 +5277,13 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                 </div>
                 <button
                   onClick={() => { setScreen("dashboard"); setActiveTab("profile"); }}
-                  className="px-5 py-2.5 bg-black text-white text-xs font-bold rounded-xl hover:scale-105 transition"
+                  className="px-5 py-2.5 bg-black text-white text-xs font-bold rounded-xl hover:scale-105 transition cursor-pointer"
                 >
                   Log In Now
                 </button>
               </div>
             ) : myOrders.length === 0 ? (
-              <div className="bg-white rounded-[26px] p-8 border border-neutral-100 shadow-xs text-center space-y-4">
+              <div className="bg-white rounded-[32px] p-8 border border-neutral-100 shadow-xs text-center space-y-4">
                 <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
                   <Package size={32} />
                 </div>
@@ -5244,152 +5295,242 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                 </div>
                 <button
                   onClick={() => { setScreen("dashboard"); setActiveTab("store"); }}
-                  className="px-5 py-2.5 bg-black text-white text-xs font-bold rounded-xl hover:scale-105 transition"
+                  className="px-5 py-2.5 bg-black text-white text-xs font-bold rounded-xl hover:scale-105 transition cursor-pointer"
                 >
                   Shop Collection
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                {myOrders.map((ord) => {
-                  const isCancellable = ord.status === "Pending" || ord.status === "Processing";
-                  const isAddressEditable = ord.status === "Pending" || ord.status === "Processing";
-                  const isPaymentEditable = ord.status === "Pending" || ord.status === "Processing";
-                  
-                  return (
-                    <div key={ord.id} className="bg-white border border-neutral-150 rounded-[24px] p-4 shadow-sm space-y-4 text-left">
-                      {/* Top Bar with ID, Status badge and Date */}
-                      <div className="flex justify-between items-start border-b border-neutral-100 pb-3">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-extrabold text-neutral-900 text-xs">{ord.id}</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(ord.id);
-                              }}
-                              className="text-neutral-400 hover:text-black transition"
-                              title="Copy ID"
-                            >
-                              <Copy size={11} />
-                            </button>
-                          </div>
-                          <span className="text-[10px] text-neutral-400 font-medium block mt-0.5">
-                            Placed on {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                          ord.status === "Pending" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                          ord.status === "Processing" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                          ord.status === "Shipped" ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
-                          ord.status === "Delivered" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                          ord.status === "Cancelled" ? "bg-rose-50 text-rose-700 border-rose-200" :
-                          "bg-neutral-50 text-neutral-700 border-neutral-200"
+              <div className="space-y-6">
+                {/* Premium Tab Navigation */}
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-neutral-100 -mx-4 px-4 sm:mx-0 sm:px-0">
+                  {(["All Orders", "Processing", "Shipped", "Delivered", "Cancelled"] as const).map((tab) => {
+                    const count = tab === "All Orders" 
+                      ? myOrders.length 
+                      : myOrders.filter(o => {
+                          if (tab === "Processing") return o.status === "Processing" || o.status === "Pending";
+                          return o.status === tab;
+                        }).length;
+
+                    const isActive = orderFilter === tab;
+
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setOrderFilter(tab)}
+                        className={`px-4 py-2.5 rounded-full text-xs font-extrabold whitespace-nowrap transition cursor-pointer flex items-center gap-2 ${
+                          isActive 
+                            ? "bg-neutral-950 text-white shadow-sm" 
+                            : "bg-white text-neutral-600 border border-neutral-100 hover:bg-neutral-50"
+                        }`}
+                      >
+                        <span>{tab}</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                          isActive ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-500"
                         }`}>
-                          ● {ord.status}
+                          {count}
                         </span>
-                      </div>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                      {/* Items */}
-                      <div className="space-y-3">
-                        {ord.items.map((item, idx) => (
-                          <div key={idx} className="flex gap-3">
-                            <div className="w-16 h-16 bg-[#F5F5F4] rounded-xl flex items-center justify-center p-1 border border-neutral-100 overflow-hidden shrink-0">
-                              <img src={item.product.images[0]} alt="" className="max-h-full max-w-full object-contain mix-blend-multiply" referrerPolicy="no-referrer" />
-                            </div>
-                            <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                              <div>
-                                <h4 className="font-bold text-xs text-neutral-900 truncate leading-tight">{item.product.name}</h4>
-                                <p className="text-[10px] text-[#8E8E8A] mt-0.5">
-                                  Color: <span className="font-semibold text-neutral-700">{item.selectedColor}</span> • Size: <span className="font-semibold text-neutral-700">{item.selectedSize}</span>
-                                </p>
-                              </div>
-                              <div className="flex justify-between items-baseline">
-                                <span className="text-[10px] text-neutral-400">Qty: {item.quantity}</span>
-                                <span className="text-xs font-black text-neutral-900">₹{item.product.price}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                {/* Filtered Orders List */}
+                {(() => {
+                  const filteredOrders = myOrders.filter(o => {
+                    if (orderFilter === "All Orders") return true;
+                    if (orderFilter === "Processing") return o.status === "Processing" || o.status === "Pending";
+                    return o.status === orderFilter;
+                  });
 
-                      {/* Total Amount, Payment details, Shipping Address */}
-                      <div className="bg-neutral-50 rounded-2xl p-3 space-y-2.5 text-xs border border-neutral-100">
-                        {/* Total Amount */}
-                        <div className="flex justify-between items-center font-bold">
-                          <span className="text-[#8E8E8A]">Total Amount:</span>
-                          <span className="text-neutral-900 text-sm font-black">₹{ord.totalAmount}</span>
+                  if (filteredOrders.length === 0) {
+                    return (
+                      <div className="bg-white rounded-[32px] p-10 border border-neutral-100 shadow-xs text-center space-y-5">
+                        <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto text-neutral-300">
+                          <Package size={32} />
                         </div>
-
-                        {/* Payment Method section */}
-                        <div className="border-t border-neutral-200/50 pt-2.5 space-y-1">
-                          <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-wider block">Payment Method</span>
-                          <div className="flex justify-between items-center">
-                            <span className="font-bold text-neutral-800 flex items-center gap-1.5">
-                              <CreditCard size={12} className="text-neutral-500" />
-                              {ord.paymentMethod === "COD" ? "Cash on Delivery" : ord.paymentMethod}
-                            </span>
-                            
-                            {isPaymentEditable && (
-                              <select
-                                value={ord.paymentMethod}
-                                onChange={(e) => handleUpdateOrder(ord.id, { paymentMethod: e.target.value })}
-                                className="bg-white border border-neutral-200 text-[10px] font-bold text-neutral-700 px-2 py-1 rounded-lg focus:outline-none"
-                              >
-                                <option value="COD">Cash on Delivery</option>
-                                <option value="UPI">UPI</option>
-                                <option value="GooglePay">Google Pay</option>
-                                <option value="Card">Card</option>
-                              </select>
-                            )}
-                          </div>
+                        <div className="space-y-1">
+                          <h3 className="font-display font-black text-base text-neutral-900">No {orderFilter} Found</h3>
+                          <p className="text-xs text-[#8E8E8A] leading-relaxed max-w-xs mx-auto">
+                            There are no orders matching this status filter. Browse our collection to make a purchase!
+                          </p>
                         </div>
+                        <button
+                          onClick={() => { setScreen("dashboard"); setActiveTab("store"); }}
+                          className="px-6 py-3 bg-neutral-955 hover:bg-black text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
+                        >
+                          Shop Collection
+                        </button>
+                      </div>
+                    );
+                  }
 
-                        {/* Shipping Address section */}
-                        <div className="border-t border-neutral-200/50 pt-2.5 space-y-1.5">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-wider">Delivery Address</span>
-                            {isAddressEditable && (
+                  return (
+                    <div className="space-y-4">
+                      {filteredOrders.map((ord) => {
+                        const firstItem = ord.items[0];
+                        const totalQty = ord.items.reduce((acc, item) => acc + item.quantity, 0);
+                        const hasMultiple = ord.items.length > 1;
+
+                        // Status Badge Color Map
+                        const getStatusStyle = (status: string) => {
+                          switch (status) {
+                            case "Pending":
+                              return { bg: "bg-[#FEF3C7] text-[#D97706] border-[#FCD34D]" };
+                            case "Processing":
+                              return { bg: "bg-[#FFEDD5] text-[#EA580C] border-[#FED7AA]" };
+                            case "Shipped":
+                              return { bg: "bg-[#DBEAFE] text-[#2563EB] border-[#BFDBFE]" };
+                            case "Delivered":
+                              return { bg: "bg-[#D1FAE5] text-[#16A34A] border-[#A7F3D0]" };
+                            case "Cancelled":
+                              return { bg: "bg-neutral-900 text-white border-neutral-800" };
+                            default:
+                              return { bg: "bg-neutral-50 text-neutral-700 border-neutral-200" };
+                          }
+                        };
+
+                        const statusStyle = getStatusStyle(ord.status);
+
+                        return (
+                          <div 
+                            key={ord.id}
+                            className="bg-white hover:bg-neutral-50/20 border border-neutral-100 rounded-[28px] p-5 shadow-xs hover:shadow-md transition duration-300 flex flex-col sm:flex-row gap-5 items-start sm:items-center justify-between text-left relative group"
+                          >
+                            {/* Left: Info & Product Preview */}
+                            <div className="flex gap-4 items-start sm:items-center min-w-0 flex-1">
+                              {/* Product Image Thumbnail */}
+                              <div className="w-20 h-20 bg-[#FBFBFA] border border-neutral-100 rounded-2xl flex items-center justify-center p-1.5 shrink-0 overflow-hidden relative">
+                                {firstItem?.product?.images?.[0] ? (
+                                  <img 
+                                    src={firstItem.product.images[0]} 
+                                    alt="" 
+                                    className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <Package size={24} className="text-neutral-300" />
+                                )}
+                                {hasMultiple && (
+                                  <span className="absolute bottom-1 right-1 bg-neutral-900 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-xs">
+                                    +{ord.items.length - 1}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Text details */}
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs font-black text-neutral-900 tracking-tight">#{ord.id.slice(-8).toUpperCase()}</span>
+                                  <span className={`px-2 py-0.5 border text-[9px] font-black rounded-full uppercase tracking-wider ${statusStyle.bg}`}>
+                                    {ord.status}
+                                  </span>
+                                </div>
+                                
+                                <h4 className="font-display font-black text-sm text-neutral-900 leading-tight truncate">
+                                  {firstItem?.product?.name || "Premium Footwear"}
+                                  {hasMultiple && <span className="text-neutral-400 font-medium text-xs"> and others</span>}
+                                </h4>
+
+                                <div className="text-[11px] text-neutral-500 font-medium flex flex-wrap gap-x-2.5 gap-y-1">
+                                  <span>Qty: {totalQty}</span>
+                                  <span className="text-neutral-300">•</span>
+                                  <span>Placed {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                </div>
+
+                                <div className="pt-0.5">
+                                  <span className="text-xs font-black text-[#C9A34E]">₹{ord.totalAmount}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right: View Button & Interactive Icon */}
+                            <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 gap-3 border-neutral-100">
                               <button
-                                onClick={() => {
-                                  const newAddr = prompt("Enter new shipping address:", ord.shippingAddress);
-                                  if (newAddr !== null && newAddr.trim() !== "") {
-                                    handleUpdateOrder(ord.id, { shippingAddress: newAddr.trim() });
-                                  }
-                                }}
-                                className="text-[9px] text-[#E2583E] hover:underline font-extrabold"
+                                onClick={() => setSelectedDetailOrder(ord)}
+                                className="py-2.5 px-4.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-150 text-neutral-800 text-[11px] font-extrabold rounded-xl transition cursor-pointer shrink-0"
                               >
-                                Edit Address
+                                View Order Details
                               </button>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-neutral-600 font-medium leading-relaxed">
-                            {ord.shippingAddress}
-                          </p>
-                          <p className="text-[10px] text-[#8E8E8A] font-bold">
-                            Phone: {ord.customerPhone}
-                          </p>
-                        </div>
-                      </div>
 
+                              {/* Right Chevron */}
+                              <div className="hidden sm:flex w-8 h-8 rounded-full bg-neutral-50/60 text-neutral-400 group-hover:text-black group-hover:bg-neutral-100 items-center justify-center transition duration-300 cursor-pointer" onClick={() => setSelectedDetailOrder(ord)}>
+                                <ChevronRight size={16} className="group-hover:translate-x-0.5 transition duration-300" />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* STUNNING ORDER DETAILS MODAL */}
+            <AnimatePresence>
+              {selectedDetailOrder && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-neutral-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+                  onClick={() => setSelectedDetailOrder(null)}
+                >
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                    transition={{ type: "spring", damping: 30, stiffness: 350 }}
+                    className="bg-white rounded-[32px] border border-neutral-100 shadow-2xl max-w-lg w-full overflow-hidden text-left flex flex-col max-h-[90vh]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Sticky Modal Header */}
+                    <div className="p-6 border-b border-neutral-100 flex justify-between items-center bg-[#FAFBFB]">
+                      <div className="text-left">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-display font-black text-base text-neutral-900 tracking-tight">Order Details</h3>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(selectedDetailOrder.id)}
+                            className="text-neutral-400 hover:text-black transition p-1 cursor-pointer"
+                            title="Copy Order ID"
+                          >
+                            <Copy size={12} />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-neutral-400 font-extrabold mt-0.5 tracking-wide uppercase font-sans">
+                          ID: {selectedDetailOrder.id}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedDetailOrder(null)}
+                        className="w-8 h-8 rounded-full bg-white hover:bg-neutral-100 border border-neutral-100 flex items-center justify-center text-neutral-500 hover:text-black transition cursor-pointer"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+
+                    {/* Scrollable Content */}
+                    <div className="p-6 overflow-y-auto space-y-6">
+                      
                       {/* Live Tracking Progress bar */}
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-[9px] font-extrabold text-neutral-400 uppercase tracking-wider block">Order Progress</span>
-                        {ord.status === "Cancelled" ? (
-                          <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl p-2.5 text-red-700 text-xs font-bold">
-                            <span className="w-2.5 h-2.5 bg-red-500 rounded-full" />
-                            <span>This order has been cancelled.</span>
+                      <div className="bg-neutral-50/50 border border-neutral-100 rounded-2xl p-4.5 space-y-3 text-left">
+                        <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Live Delivery Status</span>
+                        {selectedDetailOrder.status === "Cancelled" ? (
+                          <div className="flex items-center gap-2.5 bg-red-50 border border-red-100 rounded-xl p-3 text-red-700 text-xs font-bold">
+                            <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                            <span>This order has been cancelled and refunded.</span>
                           </div>
                         ) : (
                           <div className="grid grid-cols-4 gap-1 text-center relative pt-1">
                             {/* Track bar progress */}
-                            <div className="absolute top-3 left-[12%] right-[12%] h-[3px] bg-neutral-100 -z-10">
+                            <div className="absolute top-3 left-[12%] right-[12%] h-[3px] bg-neutral-150 -z-10">
                               <div 
                                 className="h-full bg-black transition-all duration-500" 
                                 style={{ 
-                                  width: ord.status === "Pending" ? "0%" :
-                                         ord.status === "Processing" ? "33%" :
-                                         ord.status === "Shipped" ? "66%" : "100%"
+                                  width: selectedDetailOrder.status === "Pending" ? "0%" :
+                                         selectedDetailOrder.status === "Processing" ? "33%" :
+                                         selectedDetailOrder.status === "Shipped" ? "66%" : "100%"
                                 }} 
                               />
                             </div>
@@ -5401,18 +5542,18 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                               { label: "Delivered", val: "Delivered" }
                             ].map((step, idx) => {
                               const steps = ["Pending", "Processing", "Shipped", "Delivered"];
-                              const ordIdx = steps.indexOf(ord.status);
+                              const ordIdx = steps.indexOf(selectedDetailOrder.status);
                               const stepIdx = steps.indexOf(step.val);
                               const isActive = stepIdx <= ordIdx;
                               
                               return (
                                 <div key={idx} className="flex flex-col items-center">
-                                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black ${
-                                    isActive ? "bg-black text-white" : "bg-neutral-200 text-neutral-500"
+                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black transition-all duration-300 ${
+                                    isActive ? "bg-neutral-950 text-white scale-110 shadow-xs" : "bg-neutral-200 text-neutral-500"
                                   }`}>
                                     {isActive ? "✓" : idx + 1}
                                   </div>
-                                  <span className={`text-[8px] mt-1 font-extrabold uppercase tracking-wide ${
+                                  <span className={`text-[8px] mt-1.5 font-black uppercase tracking-wider ${
                                     isActive ? "text-neutral-900" : "text-neutral-400"
                                   }`}>
                                     {step.label}
@@ -5424,36 +5565,148 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                         )}
                       </div>
 
-                      {/* Order Actions */}
-                      <div className="border-t border-neutral-100 pt-3 flex gap-2">
-                        <button
-                          onClick={() => downloadInvoice(ord)}
-                          className="flex-1 py-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-150 text-neutral-700 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                          </svg>
-                          Download Invoice
-                        </button>
-
-                        {isCancellable && (
-                          <button
-                            onClick={() => {
-                              if (confirm("Are you sure you want to cancel this order? This action cannot be undone.")) {
-                                handleUpdateOrder(ord.id, { status: "Cancelled" });
-                              }
-                            }}
-                            className="flex-1 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 font-extrabold text-xs rounded-xl transition cursor-pointer"
-                          >
-                            Cancel Order
-                          </button>
-                        )}
+                      {/* Order Items List */}
+                      <div className="space-y-3.5">
+                        <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Items Ordered ({selectedDetailOrder.items.length})</span>
+                        <div className="space-y-3">
+                          {selectedDetailOrder.items.map((item, idx) => (
+                            <div key={idx} className="flex gap-4 items-center border-b border-neutral-100/60 pb-3 last:border-b-0 last:pb-0">
+                              <div className="w-16 h-16 bg-[#FBFBFA] border border-neutral-100 rounded-xl flex items-center justify-center p-1 overflow-hidden shrink-0">
+                                {item.product?.images?.[0] ? (
+                                  <img 
+                                    src={item.product.images[0]} 
+                                    alt="" 
+                                    className="max-h-full max-w-full object-contain mix-blend-multiply" 
+                                    referrerPolicy="no-referrer" 
+                                  />
+                                ) : (
+                                  <Package size={20} className="text-neutral-300" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 text-left">
+                                <div>
+                                  <h4 className="font-bold text-xs text-neutral-900 truncate leading-tight">{item.product?.name || "Luxury Footwear"}</h4>
+                                  <p className="text-[10px] text-neutral-500 mt-0.5 font-medium">
+                                    Color: <span className="font-semibold text-neutral-800">{item.selectedColor}</span> • Size: <span className="font-semibold text-neutral-800">{item.selectedSize}</span>
+                                  </p>
+                                </div>
+                                <div className="flex justify-between items-baseline mt-1">
+                                  <span className="text-[10px] text-neutral-400 font-medium">Qty: {item.quantity}</span>
+                                  <span className="text-xs font-black text-neutral-900">₹{item.product?.price || 0}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
+
+                      {/* Total Amount Breakdown */}
+                      <div className="bg-neutral-50/50 border border-neutral-100 rounded-2xl p-4 space-y-2.5 text-xs">
+                        <div className="flex justify-between items-center font-bold text-neutral-600">
+                          <span>Subtotal:</span>
+                          <span className="text-neutral-800 font-black">₹{selectedDetailOrder.totalAmount}</span>
+                        </div>
+                        <div className="flex justify-between items-center font-bold text-neutral-600">
+                          <span>Luxury Shipping:</span>
+                          <span className="text-emerald-600 font-extrabold uppercase tracking-wide text-[10px]">Free Express</span>
+                        </div>
+                        <div className="border-t border-neutral-200/50 pt-2.5 flex justify-between items-center font-black">
+                          <span className="text-neutral-900 text-sm">Total Paid:</span>
+                          <span className="text-neutral-950 text-sm font-black">₹{selectedDetailOrder.totalAmount}</span>
+                        </div>
+                      </div>
+
+                      {/* Delivery Address Details */}
+                      <div className="border border-neutral-100 rounded-2xl p-4 space-y-2 text-left">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Delivery Address</span>
+                          {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
+                            <button
+                              onClick={() => {
+                                const newAddr = prompt("Enter new shipping address:", selectedDetailOrder.shippingAddress);
+                                if (newAddr !== null && newAddr.trim() !== "") {
+                                  handleUpdateOrder(selectedDetailOrder.id, { shippingAddress: newAddr.trim() });
+                                  setSelectedDetailOrder({ ...selectedDetailOrder, shippingAddress: newAddr.trim() });
+                                }
+                              }}
+                              className="text-[10px] text-[#C9A34E] hover:underline font-extrabold cursor-pointer"
+                            >
+                              Edit Address
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-neutral-700 font-medium leading-relaxed mt-1">
+                          {selectedDetailOrder.shippingAddress}
+                        </p>
+                        <div className="text-[10px] text-neutral-500 font-semibold flex gap-2 pt-1.5 border-t border-neutral-100/60">
+                          <span>Phone: {selectedDetailOrder.customerPhone || "N/A"}</span>
+                        </div>
+                      </div>
+
+                      {/* Payment Method details */}
+                      <div className="border border-neutral-100 rounded-2xl p-4 space-y-2 text-left">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Payment Details</span>
+                          {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
+                            <select
+                              value={selectedDetailOrder.paymentMethod}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleUpdateOrder(selectedDetailOrder.id, { paymentMethod: val });
+                                setSelectedDetailOrder({ ...selectedDetailOrder, paymentMethod: val });
+                              }}
+                              className="bg-white border border-neutral-200 text-[10px] font-extrabold text-neutral-700 px-2 py-1 rounded-lg focus:outline-none cursor-pointer"
+                            >
+                              <option value="COD">Cash on Delivery</option>
+                              <option value="UPI">UPI Payment</option>
+                              <option value="GooglePay">Google Pay</option>
+                              <option value="Card">Credit/Debit Card</option>
+                            </select>
+                          )}
+                        </div>
+                        <div className="flex justify-between items-center pt-1">
+                          <span className="font-bold text-xs text-neutral-800 flex items-center gap-1.5">
+                            <CreditCard size={13} className="text-neutral-400" />
+                            {selectedDetailOrder.paymentMethod === "COD" ? "Cash on Delivery (COD)" : selectedDetailOrder.paymentMethod}
+                          </span>
+                          <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">
+                            Secured
+                          </span>
+                        </div>
+                      </div>
+
                     </div>
-                  );
-                })}
-              </div>
-            )}
+
+                    {/* Sticky Footer Actions */}
+                    <div className="p-5 border-t border-neutral-100 bg-neutral-50 flex gap-3">
+                      <button
+                        onClick={() => downloadInvoice(selectedDetailOrder)}
+                        className="flex-1 py-3 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Download Invoice
+                      </button>
+
+                      {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
+                        <button
+                          onClick={() => {
+                            if (confirm("Are you sure you want to cancel this order? This action cannot be undone.")) {
+                              handleUpdateOrder(selectedDetailOrder.id, { status: "Cancelled" });
+                              setSelectedDetailOrder({ ...selectedDetailOrder, status: "Cancelled" });
+                            }
+                          }}
+                          className="flex-1 py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 font-extrabold text-xs rounded-xl transition cursor-pointer"
+                        >
+                          Cancel Order
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
 
