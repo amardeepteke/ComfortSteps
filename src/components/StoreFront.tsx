@@ -105,9 +105,24 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
   const isTablet = windowWidth >= 768 && windowWidth < 1024;
   const isDesktop = windowWidth >= 1024;
 
-  // Main view state: onboarding, dashboard, detail, cart, register, my_orders, privacy_policy, refund_policy, terms_and_conditions, contact_us
-  const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register" | "my_orders" | "privacy_policy" | "refund_policy" | "terms_and_conditions" | "contact_us">("onboarding");
+  // Main view state: onboarding, dashboard, detail, cart, register, my_orders, order_details, privacy_policy, refund_policy, terms_and_conditions, contact_us
+  const [screen, setScreen] = useState<"onboarding" | "dashboard" | "detail" | "cart" | "register" | "my_orders" | "order_details" | "privacy_policy" | "refund_policy" | "terms_and_conditions" | "contact_us">("onboarding");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // --- PREMIUM REDESIGNED ORDERS FLOW STATES ---
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [cancelReasonSelect, setCancelReasonSelect] = useState("Changed my mind");
+  const [cancelAdditionalComments, setCancelAdditionalComments] = useState("");
+  
+  const [isReturnReplaceOpen, setIsReturnReplaceOpen] = useState(false);
+  const [returnReplaceType, setReturnReplaceType] = useState<"return" | "replace">("return");
+  const [returnReplaceReason, setReturnReplaceReason] = useState("Size doesn't fit");
+  const [returnReplaceComments, setReturnReplaceComments] = useState("");
+  
+  const [isEditAddressOpen, setIsEditAddressOpen] = useState(false);
+  const [editAddressName, setEditAddressName] = useState("");
+  const [editAddressPhone, setEditAddressPhone] = useState("");
+  const [editAddressDetails, setEditAddressDetails] = useState("");
   
   // Tab within dashboard: "home" | "store" | "wishlist" | "profile"
   const [activeTab, setActiveTab] = useState<"home" | "store" | "wishlist" | "profile">("home");
@@ -1843,7 +1858,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                   { id: "orders", label: "Orders" },
                   { id: "profile", label: "Profile" }
                 ].map((tab) => {
-                  const isActive = (tab.id === "orders" && screen === "my_orders") || (tab.id !== "orders" && screen === "dashboard" && activeTab === tab.id && !selectedProduct);
+                  const isActive = (tab.id === "orders" && (screen === "my_orders" || screen === "order_details")) || (tab.id !== "orders" && screen === "dashboard" && activeTab === tab.id && !selectedProduct);
                   return (
                     <button
                       key={tab.id}
@@ -5395,7 +5410,14 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                         return (
                           <div 
                             key={ord.id}
-                            className="bg-white hover:bg-neutral-50/20 border border-neutral-100 rounded-[28px] p-5 shadow-xs hover:shadow-md transition duration-300 flex flex-col sm:flex-row gap-5 items-start sm:items-center justify-between text-left relative group"
+                            onClick={() => {
+                              setSelectedDetailOrder(ord);
+                              setScreen("order_details");
+                              setIsEditAddressOpen(false);
+                              setIsCancelConfirmOpen(false);
+                              setIsReturnReplaceOpen(false);
+                            }}
+                            className="bg-white hover:bg-neutral-50/10 border border-neutral-100 hover:border-neutral-250 rounded-[28px] p-5 shadow-3xs hover:shadow-xs transition duration-300 flex flex-col sm:flex-row gap-5 items-start sm:items-center justify-between text-left relative group cursor-pointer"
                           >
                             {/* Left: Info & Product Preview */}
                             <div className="flex gap-4 items-start sm:items-center min-w-0 flex-1">
@@ -5405,14 +5427,14 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                   <img 
                                     src={firstItem.product.images[0]} 
                                     alt="" 
-                                    className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-105 transition duration-300"
+                                    className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-102 transition duration-300"
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
                                   <Package size={24} className="text-neutral-300" />
                                 )}
                                 {hasMultiple && (
-                                  <span className="absolute bottom-1 right-1 bg-neutral-900 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-xs">
+                                  <span className="absolute bottom-1.5 right-1.5 bg-neutral-900 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full shadow-xs">
                                     +{ord.items.length - 1}
                                   </span>
                                 )}
@@ -5421,7 +5443,7 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                               {/* Text details */}
                               <div className="min-w-0 space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-xs font-black text-neutral-900 tracking-tight">#{ord.id.slice(-8).toUpperCase()}</span>
+                                  <span className="text-[10px] font-mono font-bold text-neutral-400 tracking-tight">#{ord.id.slice(-8).toUpperCase()}</span>
                                   <span className={`px-2 py-0.5 border text-[9px] font-black rounded-full uppercase tracking-wider ${statusStyle.bg}`}>
                                     {ord.status}
                                   </span>
@@ -5432,31 +5454,36 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                                   {hasMultiple && <span className="text-neutral-400 font-medium text-xs"> and others</span>}
                                 </h4>
 
-                                <div className="text-[11px] text-neutral-500 font-medium flex flex-wrap gap-x-2.5 gap-y-1">
+                                <div className="text-[11px] text-neutral-500 font-medium flex flex-wrap gap-x-2.5 gap-y-0.5 font-sans">
                                   <span>Qty: {totalQty}</span>
+                                  {firstItem?.selectedColor && (
+                                    <>
+                                      <span className="text-neutral-300">•</span>
+                                      <span>Color: {firstItem.selectedColor}</span>
+                                    </>
+                                  )}
+                                  {firstItem?.selectedSize && (
+                                    <>
+                                      <span className="text-neutral-300">•</span>
+                                      <span>Size: {firstItem.selectedSize}</span>
+                                    </>
+                                  )}
                                   <span className="text-neutral-300">•</span>
                                   <span>Placed {new Date(ord.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                 </div>
 
                                 <div className="pt-0.5">
-                                  <span className="text-xs font-black text-[#C9A34E]">₹{ord.totalAmount}</span>
+                                  <span className="text-xs font-black text-[#BC9D4E]">₹{ord.totalAmount.toLocaleString("en-IN")}</span>
                                 </div>
                               </div>
                             </div>
 
                             {/* Right: View Button & Interactive Icon */}
-                            <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 gap-3 border-neutral-100">
-                              <button
-                                onClick={() => setSelectedDetailOrder(ord)}
-                                className="py-2.5 px-4.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-150 text-neutral-800 text-[11px] font-extrabold rounded-xl transition cursor-pointer shrink-0"
-                              >
-                                View Order Details
-                              </button>
-
-                              {/* Right Chevron */}
-                              <div className="hidden sm:flex w-8 h-8 rounded-full bg-neutral-50/60 text-neutral-400 group-hover:text-black group-hover:bg-neutral-100 items-center justify-center transition duration-300 cursor-pointer" onClick={() => setSelectedDetailOrder(ord)}>
-                                <ChevronRight size={16} className="group-hover:translate-x-0.5 transition duration-300" />
-                              </div>
+                            <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 gap-3 border-neutral-50">
+                              <span className="text-[11px] font-black text-[#BC9D4E] uppercase tracking-wider group-hover:underline flex items-center gap-1">
+                                View Details
+                                <ChevronRight size={14} className="group-hover:translate-x-0.5 transition duration-300 text-neutral-400 group-hover:text-[#BC9D4E]" />
+                              </span>
                             </div>
                           </div>
                         );
@@ -5466,247 +5493,680 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
                 })()}
               </div>
             )}
+          </motion.div>
+        )}
 
-            {/* STUNNING ORDER DETAILS MODAL */}
-            <AnimatePresence>
-              {selectedDetailOrder && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="fixed inset-0 bg-neutral-950/40 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-                  onClick={() => setSelectedDetailOrder(null)}
+        {/* VIEW 6.5: DEDICATED ORDER DETAILS SCREEN */}
+        {screen === "order_details" && selectedDetailOrder && (
+          <motion.div
+            key="order_details"
+            initial={{ opacity: 0, x: 15 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -15 }}
+            className="max-w-4xl mx-auto px-4 sm:px-6 py-6 md:py-10 pb-32 space-y-6 text-left"
+          >
+            {/* Elegant Header with Back Button & Support */}
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-5">
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => { setScreen("my_orders"); }}
+                  className="w-10 h-10 bg-white border border-neutral-100 rounded-full flex items-center justify-center text-neutral-700 shadow-xs hover:bg-neutral-50 active:scale-95 transition cursor-pointer"
                 >
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                    transition={{ type: "spring", damping: 30, stiffness: 350 }}
-                    className="bg-white rounded-[32px] border border-neutral-100 shadow-2xl max-w-lg w-full overflow-hidden text-left flex flex-col max-h-[90vh]"
-                    onClick={(e) => e.stopPropagation()}
+                  <ChevronLeft size={18} />
+                </button>
+                <div className="text-left">
+                  <h2 className="font-display font-black text-xl text-neutral-900 uppercase tracking-widest leading-none">Order Details</h2>
+                  <p className="text-[10px] text-neutral-400 mt-1.5 font-bold uppercase tracking-wider">Premium Care & Delivery Desk</p>
+                </div>
+              </div>
+
+              {/* Need Help header button */}
+              <button 
+                onClick={() => { setScreen("contact_us"); }}
+                className="py-2 px-3.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-150 text-neutral-800 text-[10px] font-extrabold rounded-full transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+              >
+                <Headphones size={13} className="text-[#BC9D4E]" />
+                <span>Need Help?</span>
+              </button>
+            </div>
+
+            {/* Core Order Metadata Information Panel */}
+            <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Order Reference ID</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedDetailOrder.id);
+                      alert("Order ID copied to clipboard!");
+                    }}
+                    className="p-1 hover:bg-neutral-50 rounded text-neutral-400 hover:text-black transition"
+                    title="Copy Order ID"
                   >
-                    {/* Sticky Modal Header */}
-                    <div className="p-6 border-b border-neutral-100 flex justify-between items-center bg-[#FAFBFB]">
-                      <div className="text-left">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-display font-black text-base text-neutral-900 tracking-tight">Order Details</h3>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(selectedDetailOrder.id)}
-                            className="text-neutral-400 hover:text-black transition p-1 cursor-pointer"
-                            title="Copy Order ID"
-                          >
-                            <Copy size={12} />
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-neutral-400 font-extrabold mt-0.5 tracking-wide uppercase font-sans">
-                          ID: {selectedDetailOrder.id}
-                        </p>
-                      </div>
-                      <button 
-                        onClick={() => setSelectedDetailOrder(null)}
-                        className="w-8 h-8 rounded-full bg-white hover:bg-neutral-100 border border-neutral-100 flex items-center justify-center text-neutral-500 hover:text-black transition cursor-pointer"
-                      >
-                        <X size={15} />
-                      </button>
-                    </div>
+                    <Copy size={11} />
+                  </button>
+                </div>
+                <div className="font-mono text-xs font-bold text-neutral-900 tracking-tight select-all">
+                  {selectedDetailOrder.id}
+                </div>
+                <div className="text-[11px] text-neutral-500 font-medium">
+                  Placed on {new Date(selectedDetailOrder.createdAt).toLocaleDateString(undefined, { 
+                    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                  })}
+                </div>
+              </div>
 
-                    {/* Scrollable Content */}
-                    <div className="p-6 overflow-y-auto space-y-6">
-                      
-                      {/* Live Tracking Progress bar */}
-                      <div className="bg-neutral-50/50 border border-neutral-100 rounded-2xl p-4.5 space-y-3 text-left">
-                        <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Live Delivery Status</span>
-                        {selectedDetailOrder.status === "Cancelled" ? (
-                          <div className="flex items-center gap-2.5 bg-red-50 border border-red-100 rounded-xl p-3 text-red-700 text-xs font-bold">
-                            <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-                            <span>This order has been cancelled and refunded.</span>
+              {/* Current Badge Status */}
+              <div className="flex items-center md:justify-end gap-2 shrink-0">
+                <span className="text-[10px] text-neutral-400 font-bold uppercase">Status:</span>
+                <span className={`px-3 py-1 border text-[10px] font-black rounded-full uppercase tracking-wider ${
+                  selectedDetailOrder.status === "Pending" ? "bg-[#FEF3C7] text-[#D97706] border-[#FCD34D]" :
+                  selectedDetailOrder.status === "Processing" ? "bg-[#FFEDD5] text-[#EA580C] border-[#FED7AA]" :
+                  selectedDetailOrder.status === "Shipped" ? "bg-[#DBEAFE] text-[#2563EB] border-[#BFDBFE]" :
+                  selectedDetailOrder.status === "Delivered" ? "bg-[#D1FAE5] text-[#16A34A] border-[#A7F3D0]" :
+                  "bg-neutral-900 text-white border-neutral-800"
+                }`}>
+                  {selectedDetailOrder.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Grid Layout for Details Breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              
+              {/* Left Side: Items, Timeline, Address (7 Cols) */}
+              <div className="lg:col-span-7 space-y-6">
+                
+                {/* 1. Item Card Section */}
+                <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs space-y-4">
+                  <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-50 pb-2">
+                    Footwear Items ({selectedDetailOrder.items.length})
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    {selectedDetailOrder.items.map((item, idx) => (
+                      <div key={idx} className="flex gap-4 items-center border-b border-neutral-100/60 pb-4 last:border-b-0 last:pb-0">
+                        {/* High Quality Larger Image Viewer */}
+                        <div className="w-20 h-20 bg-[#FBFBFA] border border-neutral-100 rounded-2xl flex items-center justify-center p-1.5 shrink-0 overflow-hidden">
+                          {item.product?.images?.[0] ? (
+                            <img 
+                              src={item.product.images[0]} 
+                              alt={item.product?.name || "Luxury Footwear"} 
+                              className="max-h-full max-w-full object-contain mix-blend-multiply hover:scale-105 transition duration-300" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          ) : (
+                            <Package size={24} className="text-neutral-300" />
+                          )}
+                        </div>
+
+                        {/* Description Text fields */}
+                        <div className="flex-1 min-w-0 text-left">
+                          <span className="text-[9px] text-[#BC9D4E] font-black uppercase tracking-widest block">{item.product?.brand || "COMFORT STEPS"}</span>
+                          <h4 className="font-black text-sm text-neutral-900 leading-tight truncate mt-0.5">{item.product?.name || "Handcrafted Footwear"}</h4>
+                          
+                          <div className="text-[10px] text-neutral-500 mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-medium">
+                            <span>Color: <span className="font-semibold text-neutral-800">{item.selectedColor || "Natural"}</span></span>
+                            <span>•</span>
+                            <span>Size: <span className="font-semibold text-neutral-800">{item.selectedSize || "US 7"}</span></span>
+                            <span>•</span>
+                            <span>Qty: <span className="font-semibold text-neutral-800">{item.quantity}</span></span>
                           </div>
-                        ) : (
-                          <div className="grid grid-cols-4 gap-1 text-center relative pt-1">
-                            {/* Track bar progress */}
-                            <div className="absolute top-3 left-[12%] right-[12%] h-[3px] bg-neutral-150 -z-10">
-                              <div 
-                                className="h-full bg-black transition-all duration-500" 
-                                style={{ 
-                                  width: selectedDetailOrder.status === "Pending" ? "0%" :
-                                         selectedDetailOrder.status === "Processing" ? "33%" :
-                                         selectedDetailOrder.status === "Shipped" ? "66%" : "100%"
-                                }} 
-                              />
+
+                          <div className="flex justify-between items-baseline mt-2 pt-1 border-t border-dashed border-neutral-50">
+                            <span className="text-[9px] text-neutral-400 font-bold uppercase">Unit Price</span>
+                            <span className="text-xs font-black text-neutral-900">₹{(item.product?.price || 0).toLocaleString("en-IN")}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. PREMIUM TRACKING TIMELINE */}
+                <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs space-y-4">
+                  <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-50 pb-2">
+                    Order Status Timeline
+                  </h3>
+
+                  {selectedDetailOrder.status === "Cancelled" ? (
+                    <div className="space-y-4">
+                      {/* Cancelled Stepper Header */}
+                      <div className="flex items-center gap-3 bg-rose-50 border border-rose-100 rounded-2xl p-4 text-rose-700 text-xs font-medium leading-relaxed">
+                        <span className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse shrink-0" />
+                        <div>
+                          <p className="font-black text-rose-900">This Order has been Cancelled</p>
+                          {selectedDetailOrder.cancellationReason && (
+                            <p className="text-[10px] text-rose-600 mt-0.5 font-semibold">Reason: "{selectedDetailOrder.cancellationReason}"</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Cancelled Timeline visualization */}
+                      <div className="space-y-3 pl-2">
+                        {[
+                          { label: "Order Placed", desc: "Your purchase checkout was verified", completed: true },
+                          { label: "Confirmed", desc: "Footwear reserved and allocated", completed: true },
+                          { label: "Cancelled", desc: "Transaction reversed, order cancelled", completed: true, isCancelStep: true },
+                        ].map((step, idx) => (
+                          <div key={idx} className="flex gap-4 items-start relative pb-4 last:pb-0">
+                            {idx < 2 && (
+                              <div className="absolute left-2.5 top-5 bottom-0 w-[2px] bg-emerald-500" />
+                            )}
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black z-10 shrink-0 ${
+                              step.isCancelStep ? "bg-rose-500 text-white" : "bg-emerald-500 text-white"
+                            }`}>
+                              {step.isCancelStep ? "✕" : "✓"}
                             </div>
-                            
-                            {[
-                              { label: "Pending", val: "Pending" },
-                              { label: "Processing", val: "Processing" },
-                              { label: "Shipped", val: "Shipped" },
-                              { label: "Delivered", val: "Delivered" }
-                            ].map((step, idx) => {
-                              const steps = ["Pending", "Processing", "Shipped", "Delivered"];
-                              const ordIdx = steps.indexOf(selectedDetailOrder.status);
-                              const stepIdx = steps.indexOf(step.val);
-                              const isActive = stepIdx <= ordIdx;
-                              
-                              return (
-                                <div key={idx} className="flex flex-col items-center">
-                                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black transition-all duration-300 ${
-                                    isActive ? "bg-neutral-950 text-white scale-110 shadow-xs" : "bg-neutral-200 text-neutral-500"
-                                  }`}>
-                                    {isActive ? "✓" : idx + 1}
+                            <div className="text-left py-0.5">
+                              <h4 className={`text-xs font-black ${step.isCancelStep ? "text-rose-600" : "text-neutral-900"}`}>{step.label}</h4>
+                              <p className="text-[10px] text-neutral-400 font-medium mt-0.5">{step.desc}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Online Refund Tracker (Prepaid) */}
+                      {selectedDetailOrder.paymentMethod !== "COD" && selectedDetailOrder.paymentMethod !== "Cash on Delivery" && (
+                        <div className="border-t border-neutral-100 pt-4 space-y-3">
+                          <span className="text-[9px] font-black text-[#BC9D4E] uppercase tracking-widest block font-sans">Online Refund Settlement</span>
+                          
+                          <div className="bg-[#FAFBFB] border border-neutral-100 rounded-2xl p-4.5 space-y-4">
+                            <div className="space-y-3.5">
+                              {[
+                                { stepLabel: "Refund Requested", details: "Initiated instantly upon cancellation", isCompleted: true },
+                                { stepLabel: "Refund Approved", details: "Secure banker settlement authorized", isCompleted: true },
+                                { stepLabel: "Refund Processing", details: "Reversing digital funds transaction", isCompleted: selectedDetailOrder.refundStatus !== "Refund Requested" },
+                                { stepLabel: "Refund Completed", details: "Credited back to your primary payment source", isCompleted: selectedDetailOrder.refundStatus === "Refund Completed" },
+                              ].map((refundStep, rIdx) => {
+                                const isCurrent = refundStep.isCompleted;
+                                return (
+                                  <div key={rIdx} className="flex gap-3.5 items-start relative pb-4.5 last:pb-0">
+                                    {rIdx < 3 && (
+                                      <div className={`absolute left-2 top-5 bottom-0 w-[2px] ${refundStep.isCompleted ? "bg-emerald-500" : "bg-neutral-150"}`} />
+                                    )}
+                                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black z-10 shrink-0 ${
+                                      refundStep.isCompleted ? "bg-emerald-500 text-white scale-110" : "bg-neutral-200 text-neutral-500"
+                                    }`}>
+                                      {refundStep.isCompleted ? "✓" : rIdx + 1}
+                                    </div>
+                                    <div className="text-left leading-tight">
+                                      <h5 className={`text-xs font-bold ${isCurrent ? "text-neutral-900" : "text-neutral-400"}`}>{refundStep.stepLabel}</h5>
+                                      <p className="text-[10px] text-neutral-400 mt-0.5 font-medium">{refundStep.details}</p>
+                                    </div>
                                   </div>
-                                  <span className={`text-[8px] mt-1.5 font-black uppercase tracking-wider ${
-                                    isActive ? "text-neutral-900" : "text-neutral-400"
-                                  }`}>
-                                    {step.label}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Order Items List */}
-                      <div className="space-y-3.5">
-                        <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Items Ordered ({selectedDetailOrder.items.length})</span>
-                        <div className="space-y-3">
-                          {selectedDetailOrder.items.map((item, idx) => (
-                            <div key={idx} className="flex gap-4 items-center border-b border-neutral-100/60 pb-3 last:border-b-0 last:pb-0">
-                              <div className="w-16 h-16 bg-[#FBFBFA] border border-neutral-100 rounded-xl flex items-center justify-center p-1 overflow-hidden shrink-0">
-                                {item.product?.images?.[0] ? (
-                                  <img 
-                                    src={item.product.images[0]} 
-                                    alt="" 
-                                    className="max-h-full max-w-full object-contain mix-blend-multiply" 
-                                    referrerPolicy="no-referrer" 
-                                  />
-                                ) : (
-                                  <Package size={20} className="text-neutral-300" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 text-left">
-                                <div>
-                                  <h4 className="font-bold text-xs text-neutral-900 truncate leading-tight">{item.product?.name || "Luxury Footwear"}</h4>
-                                  <p className="text-[10px] text-neutral-500 mt-0.5 font-medium">
-                                    Color: <span className="font-semibold text-neutral-800">{item.selectedColor}</span> • Size: <span className="font-semibold text-neutral-800">{item.selectedSize}</span>
-                                  </p>
-                                </div>
-                                <div className="flex justify-between items-baseline mt-1">
-                                  <span className="text-[10px] text-neutral-400 font-medium">Qty: {item.quantity}</span>
-                                  <span className="text-xs font-black text-neutral-900">₹{item.product?.price || 0}</span>
-                                </div>
-                              </div>
+                                );
+                              })}
                             </div>
-                          ))}
-                        </div>
-                      </div>
 
-                      {/* Total Amount Breakdown */}
-                      <div className="bg-neutral-50/50 border border-neutral-100 rounded-2xl p-4 space-y-2.5 text-xs">
-                        <div className="flex justify-between items-center font-bold text-neutral-600">
-                          <span>Subtotal:</span>
-                          <span className="text-neutral-800 font-black">₹{selectedDetailOrder.totalAmount}</span>
+                            {/* Estimated Date of Credits */}
+                            <div className="border-t border-neutral-150/50 pt-3 text-left">
+                              <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">Estimated Bank Settlement Date</span>
+                              <p className="text-xs font-black text-neutral-800 mt-0.5">
+                                {new Date(new Date(selectedDetailOrder.createdAt).getTime() + 4 * 24 * 60 * 60 * 1000).toLocaleDateString(undefined, {
+                                  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                                })} (3-5 Business Days)
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between items-center font-bold text-neutral-600">
-                          <span>Luxury Shipping:</span>
-                          <span className="text-emerald-600 font-extrabold uppercase tracking-wide text-[10px]">Free Express</span>
-                        </div>
-                        <div className="border-t border-neutral-200/50 pt-2.5 flex justify-between items-center font-black">
-                          <span className="text-neutral-900 text-sm">Total Paid:</span>
-                          <span className="text-neutral-950 text-sm font-black">₹{selectedDetailOrder.totalAmount}</span>
-                        </div>
-                      </div>
-
-                      {/* Delivery Address Details */}
-                      <div className="border border-neutral-100 rounded-2xl p-4 space-y-2 text-left">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Delivery Address</span>
-                          {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
-                            <button
-                              onClick={() => {
-                                const newAddr = prompt("Enter new shipping address:", selectedDetailOrder.shippingAddress);
-                                if (newAddr !== null && newAddr.trim() !== "") {
-                                  handleUpdateOrder(selectedDetailOrder.id, { shippingAddress: newAddr.trim() });
-                                  setSelectedDetailOrder({ ...selectedDetailOrder, shippingAddress: newAddr.trim() });
-                                }
-                              }}
-                              className="text-[10px] text-[#C9A34E] hover:underline font-extrabold cursor-pointer"
-                            >
-                              Edit Address
-                            </button>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-neutral-700 font-medium leading-relaxed mt-1">
-                          {selectedDetailOrder.shippingAddress}
-                        </p>
-                        <div className="text-[10px] text-neutral-500 font-semibold flex gap-2 pt-1.5 border-t border-neutral-100/60">
-                          <span>Phone: {selectedDetailOrder.customerPhone || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      {/* Payment Method details */}
-                      <div className="border border-neutral-100 rounded-2xl p-4 space-y-2 text-left">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block font-sans">Payment Details</span>
-                          {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
-                            <select
-                              value={selectedDetailOrder.paymentMethod}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                handleUpdateOrder(selectedDetailOrder.id, { paymentMethod: val });
-                                setSelectedDetailOrder({ ...selectedDetailOrder, paymentMethod: val });
-                              }}
-                              className="bg-white border border-neutral-200 text-[10px] font-extrabold text-neutral-700 px-2 py-1 rounded-lg focus:outline-none cursor-pointer"
-                            >
-                              <option value="COD">Cash on Delivery</option>
-                              <option value="UPI">UPI Payment</option>
-                              <option value="GooglePay">Google Pay</option>
-                              <option value="Card">Credit/Debit Card</option>
-                            </select>
-                          )}
-                        </div>
-                        <div className="flex justify-between items-center pt-1">
-                          <span className="font-bold text-xs text-neutral-800 flex items-center gap-1.5">
-                            <CreditCard size={13} className="text-neutral-400" />
-                            {selectedDetailOrder.paymentMethod === "COD" ? "Cash on Delivery (COD)" : selectedDetailOrder.paymentMethod}
-                          </span>
-                          <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">
-                            Secured
-                          </span>
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* Sticky Footer Actions */}
-                    <div className="p-5 border-t border-neutral-100 bg-neutral-50 flex gap-3">
-                      <button
-                        onClick={() => downloadInvoice(selectedDetailOrder)}
-                        className="flex-1 py-3 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                        </svg>
-                        Download Invoice
-                      </button>
-
-                      {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
-                        <button
-                          onClick={() => {
-                            if (confirm("Are you sure you want to cancel this order? This action cannot be undone.")) {
-                              handleUpdateOrder(selectedDetailOrder.id, { status: "Cancelled" });
-                              setSelectedDetailOrder({ ...selectedDetailOrder, status: "Cancelled" });
-                            }
-                          }}
-                          className="flex-1 py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 font-extrabold text-xs rounded-xl transition cursor-pointer"
-                        >
-                          Cancel Order
-                        </button>
                       )}
                     </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Interactive Live Timeline Track */}
+                      <div className="space-y-5 pl-2">
+                        {[
+                          { val: "Pending", title: "Order Placed", desc: "Your luxury order request was logged safely", isDone: true },
+                          { val: "Confirmed", title: "Confirmed", desc: "Payment settled & merchant approved footwear stock", isDone: selectedDetailOrder.status !== "Pending" },
+                          { val: "Packed", title: "Packed", desc: "Footwear inspected & handpackaged in double luxury boxes", isDone: selectedDetailOrder.status === "Shipped" || selectedDetailOrder.status === "Delivered" },
+                          { val: "Shipped", title: "Shipped", desc: "Dispatched via air courier express partners", isDone: selectedDetailOrder.status === "Shipped" || selectedDetailOrder.status === "Delivered" },
+                          { val: "Transit", title: "Out For Delivery", desc: "Arrived at courier hub & out for your doorstep drop", isDone: selectedDetailOrder.status === "Delivered" },
+                          { val: "Delivered", title: "Delivered", desc: "Signature captured at delivery address", isDone: selectedDetailOrder.status === "Delivered" },
+                        ].map((timelineStep, idx, arr) => {
+                          return (
+                            <div key={idx} className="flex gap-4 items-start relative pb-5 last:pb-0">
+                              {idx < arr.length - 1 && (
+                                <div className={`absolute left-2.5 top-5 bottom-0 w-[2px] ${timelineStep.isDone && arr[idx + 1].isDone ? "bg-emerald-500" : "bg-neutral-150"}`} />
+                              )}
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black z-10 shrink-0 transition-all duration-300 ${
+                                timelineStep.isDone ? "bg-emerald-500 text-white scale-110 shadow-xs" : "bg-neutral-200 text-neutral-500"
+                              }`}>
+                                {timelineStep.isDone ? "✓" : idx + 1}
+                              </div>
+                              <div className="text-left py-0.5">
+                                <h4 className={`text-xs font-black ${timelineStep.isDone ? "text-neutral-900 font-black" : "text-neutral-400"}`}>{timelineStep.title}</h4>
+                                <p className="text-[10px] text-neutral-400 font-medium mt-0.5">{timelineStep.desc}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. DELIVERY ADDRESS with Active Inline Form Editor */}
+                <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs space-y-4">
+                  <div className="flex justify-between items-center border-b border-neutral-50 pb-2">
+                    <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <MapPin size={12} className="text-[#BC9D4E]" />
+                      <span>Delivery Address</span>
+                    </h3>
+                    
+                    {!isEditAddressOpen && (selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing") && (
+                      <button
+                        onClick={() => {
+                          setEditAddressName(selectedDetailOrder.customerName || profileName || "");
+                          setEditAddressPhone(selectedDetailOrder.customerPhone || "");
+                          setEditAddressDetails(selectedDetailOrder.shippingAddress || "");
+                          setIsEditAddressOpen(true);
+                        }}
+                        className="text-[10px] text-[#BC9D4E] hover:underline font-extrabold cursor-pointer"
+                      >
+                        Modify Address
+                      </button>
+                    )}
+                  </div>
+
+                  {isEditAddressOpen ? (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="space-y-4 text-left bg-neutral-50/50 border border-neutral-100 rounded-2xl p-4"
+                    >
+                      <h4 className="text-[10px] font-bold text-neutral-800 uppercase tracking-wide">Edit Shipping Coordinates</h4>
+                      
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[8px] uppercase font-bold text-neutral-400">Recipient Name</label>
+                            <input 
+                              type="text" 
+                              value={editAddressName}
+                              onChange={(e) => setEditAddressName(e.target.value)}
+                              className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] uppercase font-bold text-neutral-400">Phone Connection</label>
+                            <input 
+                              type="tel" 
+                              value={editAddressPhone}
+                              onChange={(e) => setEditAddressPhone(e.target.value)}
+                              className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[8px] uppercase font-bold text-neutral-400">Complete Mailing Address</label>
+                          <textarea 
+                            rows={3}
+                            value={editAddressDetails}
+                            onChange={(e) => setEditAddressDetails(e.target.value)}
+                            className="w-full bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none resize-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-1.5">
+                        <button
+                          onClick={async () => {
+                            if (!editAddressName.trim() || !editAddressDetails.trim()) {
+                              alert("Please fill out all mandatory shipping coordinates.");
+                              return;
+                            }
+                            const updatedFields = {
+                              customerName: editAddressName.trim(),
+                              customerPhone: editAddressPhone.trim(),
+                              shippingAddress: editAddressDetails.trim()
+                            };
+                            await handleUpdateOrder(selectedDetailOrder.id, updatedFields);
+                            setSelectedDetailOrder({
+                              ...selectedDetailOrder,
+                              ...updatedFields
+                            });
+                            setIsEditAddressOpen(false);
+                            alert("Shipping coordinates updated successfully.");
+                          }}
+                          className="px-4 py-2 bg-black hover:bg-neutral-900 text-white font-bold text-[10px] uppercase rounded-xl cursor-pointer"
+                        >
+                          Save Changes
+                        </button>
+                        <button
+                          onClick={() => setIsEditAddressOpen(false)}
+                          className="px-4 py-2 bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-700 font-bold text-[10px] uppercase rounded-xl cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <div className="space-y-2.5 text-left text-xs font-medium text-neutral-700">
+                      <p className="font-extrabold text-neutral-900">{selectedDetailOrder.customerName}</p>
+                      <p className="leading-relaxed text-neutral-500">{selectedDetailOrder.shippingAddress}</p>
+                      <div className="pt-2 border-t border-neutral-50 flex items-center gap-1 text-neutral-400 text-[10px]">
+                        <Phone size={11} className="text-[#BC9D4E]" />
+                        <span>Phone: <span className="text-neutral-800 font-semibold">{selectedDetailOrder.customerPhone || "N/A"}</span></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Right Side: Billing Summary, Payments, Action Triggers (5 Cols) */}
+              <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-24">
+                
+                {/* 1. PRICE RECEIPT breakdown */}
+                <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs space-y-4">
+                  <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-50 pb-2">
+                    Billing Details
+                  </h3>
+
+                  {(() => {
+                    const subtotal = selectedDetailOrder.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+                    const flatPackaging = subtotal >= 4000 ? 0 : 99;
+                    const shippingCharges = subtotal >= 2999 ? 0 : 150;
+                    const taxGstCalculated = Math.round(selectedDetailOrder.totalAmount * 0.18);
+                    const appliedDiscount = Math.max(0, subtotal + flatPackaging + shippingCharges - selectedDetailOrder.totalAmount);
+
+                    return (
+                      <div className="space-y-2.5 text-xs font-medium text-neutral-500">
+                        <div className="flex justify-between">
+                          <span>Items Subtotal</span>
+                          <span className="font-semibold text-neutral-800">₹{subtotal.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Luxury Packaging</span>
+                          <span className={flatPackaging === 0 ? "text-emerald-600 font-bold" : "font-semibold text-neutral-800"}>
+                            {flatPackaging === 0 ? "FREE" : `₹${flatPackaging}`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Express Delivery</span>
+                          <span className={shippingCharges === 0 ? "text-emerald-600 font-bold" : "font-semibold text-neutral-800"}>
+                            {shippingCharges === 0 ? "FREE" : `₹${shippingCharges}`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[10px]">
+                          <span>Taxation (Includes 18% CGST/SGST)</span>
+                          <span className="font-mono text-neutral-400">₹{taxGstCalculated.toLocaleString("en-IN")}</span>
+                        </div>
+
+                        {appliedDiscount > 0 && (
+                          <div className="flex justify-between text-emerald-600 font-bold">
+                            <span>Promotional Savings</span>
+                            <span>- ₹{appliedDiscount.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+
+                        <div className="border-t border-neutral-100 pt-3 flex justify-between items-baseline">
+                          <span className="text-sm font-black text-neutral-900">Total Paid</span>
+                          <span className="text-base font-black text-neutral-950 font-display">₹{selectedDetailOrder.totalAmount.toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* 2. PAYMENT DETAILS */}
+                <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs space-y-4">
+                  <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-50 pb-2">
+                    Payment Coordinates
+                  </h3>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold text-neutral-800">
+                      <CreditCard size={15} className="text-neutral-400" />
+                      <span>{selectedDetailOrder.paymentMethod === "COD" ? "Cash on Delivery (COD)" : selectedDetailOrder.paymentMethod}</span>
+                    </div>
+                    
+                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">
+                      Secured ✓
+                    </span>
+                  </div>
+
+                  <div className="border-t border-neutral-50 pt-3 flex items-center justify-between text-xs">
+                    <span className="text-neutral-400 font-bold uppercase text-[9px]">Transaction Settlement</span>
+                    <span className={`font-black ${
+                      selectedDetailOrder.status === "Cancelled" ? "text-rose-500" : "text-neutral-800"
+                    }`}>
+                      {selectedDetailOrder.status === "Cancelled" ? "Reversed / Refunded" : "Settled"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. ORDER ACTIONS (Download Invoice, Need Help, Cancel, Return & Replace) */}
+                <div className="space-y-3">
+                  
+                  {/* Cancel Order workflow (Shown if Pending/Confirmed/Packed) */}
+                  {(selectedDetailOrder.status === "Pending" || selectedDetailOrder.status === "Processing" || selectedDetailOrder.status === "Confirmed" || selectedDetailOrder.status === "Packed") && (
+                    <div className="bg-white border border-rose-100/60 rounded-3xl p-5 shadow-3xs space-y-4">
+                      {!isCancelConfirmOpen ? (
+                        <button
+                          onClick={() => {
+                            setIsCancelConfirmOpen(true);
+                          }}
+                          className="w-full py-3 border border-rose-200 hover:bg-rose-50/50 text-rose-600 text-xs font-black uppercase tracking-wider rounded-xl transition cursor-pointer"
+                        >
+                          Request Cancellation
+                        </button>
+                      ) : (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.98 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="space-y-4 text-left"
+                        >
+                          <div className="space-y-1.5">
+                            <h4 className="text-xs font-black text-rose-900 uppercase">Confirm Cancellation?</h4>
+                            <p className="text-[10px] text-neutral-500 font-medium">Are you sure you want to cancel this order? This action cannot be undone.</p>
+                          </div>
+
+                          {/* Cancellation Reason Selector */}
+                          <div className="space-y-2">
+                            <label className="text-[9px] uppercase font-bold text-neutral-400 block">Select Cancellation Reason *</label>
+                            <select
+                              value={cancelReasonSelect}
+                              onChange={(e) => setCancelReasonSelect(e.target.value)}
+                              className="w-full bg-neutral-50 border border-neutral-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-black cursor-pointer font-medium"
+                            >
+                              <option value="Changed my mind">Changed my mind</option>
+                              <option value="Incorrect size/color selected">Incorrect size/color selected</option>
+                              <option value="Found a better price elsewhere">Found a better price elsewhere</option>
+                              <option value="Delivery time is too long">Delivery time is too long</option>
+                              <option value="Other">Other reason</option>
+                            </select>
+                          </div>
+
+                          {/* Additional comments box */}
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] uppercase font-bold text-neutral-400 block">Comments (Optional)</label>
+                            <input 
+                              type="text"
+                              value={cancelAdditionalComments}
+                              onChange={(e) => setCancelAdditionalComments(e.target.value)}
+                              placeholder="e.g. ordered another item instead"
+                              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={async () => {
+                                const cancelReasonStr = cancelReasonSelect + (cancelAdditionalComments.trim() ? `: ${cancelAdditionalComments.trim()}` : "");
+                                const updatedFields = {
+                                  status: "Cancelled",
+                                  cancellationReason: cancelReasonStr,
+                                  refundStatus: "Refund Requested"
+                                };
+                                await handleUpdateOrder(selectedDetailOrder.id, updatedFields);
+                                setSelectedDetailOrder({
+                                  ...selectedDetailOrder,
+                                  ...updatedFields
+                                });
+                                setIsCancelConfirmOpen(false);
+                                alert("Your order has been cancelled successfully. Refund initiated if prepaid.");
+                              }}
+                              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] uppercase rounded-xl cursor-pointer"
+                            >
+                              Yes, Cancel Order
+                            </button>
+                            <button
+                              onClick={() => setIsCancelConfirmOpen(false)}
+                              className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-black text-[10px] uppercase rounded-xl cursor-pointer"
+                            >
+                              Go Back
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Return & Replacement (Active after Delivery) */}
+                  {(selectedDetailOrder.status === "Delivered") && (
+                    <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-3xs space-y-4">
+                      
+                      {selectedDetailOrder.returnRequested || selectedDetailOrder.replacementRequested ? (
+                        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-left space-y-2 text-xs">
+                          <h4 className="font-black text-amber-900 uppercase text-[10px]">Return/Replacement Request Lodged</h4>
+                          <p className="text-[10px] text-amber-700 font-medium">
+                            Our executive is scheduled to inspect your return coordinates. Keep original footwear packaging boxes intact.
+                          </p>
+                          <div className="pt-2 border-t border-amber-100 flex justify-between items-baseline text-[9px] text-amber-600 font-bold uppercase">
+                            <span>Status</span>
+                            <span>{selectedDetailOrder.returnStatus || "Processing Request"}</span>
+                          </div>
+                        </div>
+                      ) : !isReturnReplaceOpen ? (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => {
+                                setReturnReplaceType("return");
+                                setIsReturnReplaceOpen(true);
+                              }}
+                              className="py-3 border border-neutral-200 hover:bg-neutral-50 text-neutral-800 text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer"
+                            >
+                              Return Product
+                            </button>
+                            <button
+                              onClick={() => {
+                                setReturnReplaceType("replace");
+                                setIsReturnReplaceOpen(true);
+                              }}
+                              className="py-3 bg-black hover:bg-neutral-900 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer"
+                            >
+                              Replace Product
+                            </button>
+                          </div>
+                          
+                          <p className="text-[9px] text-neutral-400 font-semibold uppercase tracking-wider text-center mt-1">
+                            Eligible under 15-day Comfort Policy
+                          </p>
+                        </div>
+                      ) : (
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.98 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="space-y-4 text-left"
+                        >
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-black text-neutral-900 uppercase">
+                              Request {returnReplaceType === "return" ? "Return" : "Replacement"}
+                            </h4>
+                            <p className="text-[10px] text-neutral-400 font-medium">Select a valid reason for reverse pick-up.</p>
+                          </div>
+
+                          {/* Reason Selector */}
+                          <div className="space-y-2">
+                            <label className="text-[9px] uppercase font-bold text-neutral-400 block">Select Reason *</label>
+                            <select
+                              value={returnReplaceReason}
+                              onChange={(e) => setReturnReplaceReason(e.target.value)}
+                              className="w-full bg-neutral-50 border border-neutral-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-black cursor-pointer font-medium"
+                            >
+                              <option value="Size too small/large">Size too small/large</option>
+                              <option value="Defective or damaged product">Defective or damaged product</option>
+                              <option value="Color/Product not as described">Color/Product not as described</option>
+                              <option value="Quality not up to expectation">Quality not up to expectation</option>
+                            </select>
+                          </div>
+
+                          {/* Feedback text input */}
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] uppercase font-bold text-neutral-400 block">Brief Feedback</label>
+                            <input 
+                              type="text"
+                              value={returnReplaceComments}
+                              onChange={(e) => setReturnReplaceComments(e.target.value)}
+                              placeholder="Describe your fit feedback..."
+                              className="w-full bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={async () => {
+                                const reasonStr = returnReplaceReason + (returnReplaceComments.trim() ? `: ${returnReplaceComments.trim()}` : "");
+                                const updatedFields = {
+                                  returnRequested: returnReplaceType === "return",
+                                  replacementRequested: returnReplaceType === "replace",
+                                  returnReason: reasonStr,
+                                  returnStatus: returnReplaceType === "return" ? "Return Requested" : "Replacement Requested"
+                                };
+                                await handleUpdateOrder(selectedDetailOrder.id, updatedFields);
+                                setSelectedDetailOrder({
+                                  ...selectedDetailOrder,
+                                  ...updatedFields
+                                });
+                                setIsReturnReplaceOpen(false);
+                                alert("Request lodged successfully. Customer care executive will coordinate shortly.");
+                              }}
+                              className="flex-1 py-2 bg-black hover:bg-neutral-900 text-white font-black text-[10px] uppercase rounded-xl cursor-pointer"
+                            >
+                              Submit Request
+                            </button>
+                            <button
+                              onClick={() => setIsReturnReplaceOpen(false)}
+                              className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-black text-[10px] uppercase rounded-xl cursor-pointer"
+                            >
+                              Go Back
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+
+                    </div>
+                  )}
+
+                  {/* Standard Invoice Action Card */}
+                  <div className="bg-white border border-neutral-100 rounded-3xl p-4 shadow-3xs flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => downloadInvoice(selectedDetailOrder)}
+                      className="flex-1 py-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 text-neutral-800 font-extrabold text-[11px] rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4 text-[#BC9D4E]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                      </svg>
+                      <span>Download Invoice</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setScreen("contact_us")}
+                      className="py-3 px-4.5 bg-neutral-900 hover:bg-black text-white font-extrabold text-[11px] rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Contact Support</span>
+                    </button>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
           </motion.div>
         )}
 
@@ -6092,10 +6552,10 @@ export default function StoreFront({ products, orders = [], onAddOrder, onUpdate
             {/* Orders Button */}
             <button 
               onClick={() => { setScreen("my_orders"); setSelectedProduct(null); }}
-              className={`relative p-2.5 transition flex flex-col items-center justify-center cursor-pointer ${screen === "my_orders" && !selectedProduct ? "text-white scale-105" : "hover:text-black"}`}
+              className={`relative p-2.5 transition flex flex-col items-center justify-center cursor-pointer ${(screen === "my_orders" || screen === "order_details") && !selectedProduct ? "text-white scale-105" : "hover:text-black"}`}
               title="My Orders"
             >
-              {screen === "my_orders" && !selectedProduct && (
+              {(screen === "my_orders" || screen === "order_details") && !selectedProduct && (
                 <motion.div layoutId="navActiveBg" className="absolute inset-0 bg-black rounded-full" transition={{ type: "spring", stiffness: 350, damping: 28 }} />
               )}
               <Package size={18} className="relative z-10" />

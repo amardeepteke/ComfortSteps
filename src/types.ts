@@ -75,13 +75,21 @@ export interface Order {
   customerEmail: string;
   customerPhone: string;
   shippingAddress: string;
-  status: "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
+  status: "Pending" | "Processing" | "Shipped" | "Delivered" | "Cancelled" | string;
   createdAt: string;
   paymentMethod: "COD" | "UPI" | "Card" | "GooglePay" | string;
   paymentId?: string;
   paymentStatus?: "Paid" | "Pending" | "Failed";
   alternatePhone?: string;
   addressType?: "Home" | "Work";
+  cancellationReason?: string;
+  refundStatus?: "Refund Requested" | "Refund Approved" | "Refund Processing" | "Refund Completed" | string;
+  refundEstimatedDate?: string;
+  returnRequested?: boolean;
+  replacementRequested?: boolean;
+  returnReason?: string;
+  returnStatus?: string;
+  replacementStatus?: string;
 }
 
 export interface FirebaseConfigData {
